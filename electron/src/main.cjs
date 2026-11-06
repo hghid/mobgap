@@ -1,11 +1,11 @@
-const { app, BrowserWindow, dialog, ipcMain, protocol, session } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain, protocol, session, shell } = require('electron');
 const { handleWindowsInstall } = require('./windows-install.cjs');
 if (handleWindowsInstall(app)) return;
 
 const { createHash } = require('node:crypto');
 const { open, readFile, writeFile } = require('node:fs/promises');
 const path = require('node:path');
-const { MAX_INPUT_BYTES, APP_ORIGIN, isTrustedURL, assetName, validateExport } = require('./contracts.cjs');
+const { MAX_INPUT_BYTES, APP_ORIGIN, isTrustedURL, assetName, validateExport, websiteURL } = require('./contracts.cjs');
 
 protocol.registerSchemesAsPrivileged([{
   scheme: 'mobgap', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true },
@@ -14,7 +14,7 @@ protocol.registerSchemesAsPrivileged([{
 const appRoot = path.join(__dirname, '..');
 const contentSecurityPolicy = "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; connect-src 'self'; style-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
 const mime = { '.html': 'text/html', '.mjs': 'text/javascript', '.js': 'text/javascript', '.css': 'text/css',
-  '.wasm': 'application/wasm', '.json': 'application/json', '.py': 'text/plain' };
+  '.wasm': 'application/wasm', '.json': 'application/json', '.py': 'text/plain', '.png': 'image/png' };
 let window;
 let examples;
 
@@ -50,7 +50,7 @@ app.whenReady().then(async () => {
     return;
   }
   const allowed = new Set(['src/index.html', 'src/styles.css', 'src/renderer.mjs', 'src/worker.mjs', 'src/cwa-import.mjs',
-    'src/timeseries.mjs', 'src/timeseries-plot.mjs',
+    'src/timeseries.mjs', 'src/timeseries-plot.mjs', 'src/inkspot-logo.png',
     'runtime/manifest.json', ...Object.keys(manifest.integrity).map((name) => `runtime/${name}`)]);
   protocol.handle('mobgap', async (request) => {
     const name = assetName(request.url, allowed);
@@ -70,6 +70,11 @@ app.whenReady().then(async () => {
   });
   session.defaultSession.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
   session.defaultSession.setPermissionCheckHandler(() => false);
+
+  ipcMain.handle('website:open', async (event, site) => {
+    requireSender(event);
+    await shell.openExternal(websiteURL(site));
+  });
 
   async function chooseRecording(event, format) {
     requireSender(event);

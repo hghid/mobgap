@@ -19,7 +19,27 @@ button:hover { background: #174a9f; }
 button:disabled { opacity: .45; cursor: default; }
 button.secondary { color: #294364; background: #f6f8fb; border-color: #dce3eb; }
 button.secondary:hover { background: #e9eef5; }
-button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-visible { outline: 3px solid #8eaff2; outline-offset: 2px; }
+button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-visible, a:focus-visible { outline: 3px solid #8eaff2; outline-offset: 2px; }
+a { color: #235ec5; text-underline-offset: 3px; }
+a:hover { color: #174a9f; }
+.start-screen { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 32px 24px; }
+.welcome-card { width: 100%; max-width: 720px; padding: 26px 48px 32px; text-align: center; background: white; border: 1px solid #e1e6ed; border-radius: 18px; box-shadow: 0 8px 36px #23364b08; }
+.welcome-logo { display: block; width: min(100%, 380px); height: auto; margin: 0 auto 12px; }
+.welcome-card h1 { font-size: 26px; letter-spacing: -.5px; }
+.welcome-provider { margin: 12px 0 4px; color: #42546b; font-size: 15px; }
+.inkspot-link { display: inline-block; font-size: 19px; font-weight: 700; margin-bottom: 20px; }
+.study-platform { padding: 18px 22px; border-radius: 9px; background: #f2f6fc; color: #42546b; line-height: 1.7; }
+.welcome-attribution { max-width: 560px; margin: 20px auto 24px; color: #5c6b7e; font-size: 13px; line-height: 1.7; }
+.welcome-attribution a { display: inline-block; }
+.welcome-actions { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+button.primary-action { font-size: 16px; padding: 13px 32px; background: #3655b3; }
+button.primary-action:hover { background: #294396; }
+button.text-button { color: #425d85; background: transparent; font-size: 12px; padding: 6px 9px; }
+button.text-button:hover { color: #174a9f; background: #edf2f9; }
+.welcome-note { margin: 14px 0 0; }
+#website-error { color: #9e332e; font-size: 12px; margin: 12px 0 0; }
+.header-actions { display: flex; gap: 14px; align-items: center; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 .file-line { border: 1px dashed #d5dfea; background: #f8fafc; border-radius: 7px; padding: 13px; margin: 14px 0 9px; display: flex; justify-content: space-between; gap: 12px; overflow-wrap: anywhere; }
 #example-label { color: #126951; font-size: 12px; }
 fieldset { border: 0; margin: 20px 0 0; padding: 0; }

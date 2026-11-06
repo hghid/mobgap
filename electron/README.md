@@ -104,7 +104,17 @@ The JavaScript and Python runtime locks are committed. Installers do not access 
 
 ## Import and process a recording
 
-1. Choose a recording with **Choose CSV…** or **Choose CWA…**. For CSV, try
+The app opens on an Inkspot Science start screen with the supplied logo, an overview of the Observational
+Study Manager platform, and attribution to the Apache-licensed MobGap toolbox and its contributors.
+The Inkspot Science and upstream MobGap links open in the system browser when clicked. These two fixed
+destinations are exposed through a validated main-process operation; processing continues to block remote
+requests inside the application.
+
+1. Select **Analyse .CWA File** to enter the workspace and immediately open the CWA file chooser. This works
+   while the local runtime starts; processing waits for runtime readiness and valid participant metadata.
+   Canceling the chooser leaves the workspace available. **Open analysis workspace** enters without a chooser,
+   and **Back to start** returns to the start screen while preserving the selected recording and completed results.
+   Within the workspace, choose a recording with **Choose CSV…** or **Choose CWA…**. For CSV, try
    [`HA/001/TimeMeasure1_Test11_Trial1.csv`](../example_data/data_csv/HA/001/TimeMeasure1_Test11_Trial1.csv)
    or [`MS/001/TimeMeasure1_Test11_Trial1.csv`](../example_data/data_csv/MS/001/TimeMeasure1_Test11_Trial1.csv).
 2. Check the recording and participant settings. Exact matches to any of the nine repository examples are
@@ -268,7 +278,8 @@ files and native arrays live in ignored `.cache/cwa-tests`; they are not include
 Daily cuts and their pipeline tables are compared against independent native reads using the same midnight
 windows. CSV tests cover exact midnight sample assignment, leap-day windows, complete interior days, and short edges.
 
-Playwright launches the actual Electron app and checks file selection, metadata recognition, both pipelines,
+Playwright launches the actual Electron app and checks the start screen and bundled logo, system-browser links,
+the start button's CWA chooser and cancellation, file selection, metadata recognition, both pipelines,
 tables, CWA decoding, midnight splitting, per-day selection/export and signal plots, malformed input, cancellation, and recovery. Tests generate their CWA fixtures
 using the native test environment. `test:packaged` repeats this against the
 ASAR-packaged executable. Tests save screenshots and failure traces in `test-results/`. Linux CI uses Xvfb.

@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Add an offline Electron application in `electron/` to run the preconfigured healthy and impaired Mobilise-D
   pipelines on CSV and six-axis CWA recordings, with participant metadata, progress, result tables, and JSON export.
+  Start with Inkspot Science branding, platform information, MobGap attribution, and direct CWA file selection.
   Provide portable ZIP builds and configure a Windows Squirrel installer with shortcut and uninstall handling.
   CWA input has no application file-size cap. Process midnight-aligned calendar days separately, including shorter
   first/last days, with per-day results and exports and no sample-count cap. Include subsampled daily CWA

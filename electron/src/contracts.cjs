@@ -1,6 +1,16 @@
 const MAX_INPUT_BYTES = 64 * 1024 * 1024;
 const MAX_EXPORT_BYTES = 32 * 1024 * 1024;
 const APP_ORIGIN = 'mobgap://app';
+const websites = new Map([
+  ['inkspot', 'https://inkspot.science/'],
+  ['mobgap', 'https://github.com/mobilise-d/mobgap'],
+]);
+
+function websiteURL(site) {
+  const url = websites.get(site);
+  if (!url) throw new Error('Unknown website.');
+  return url;
+}
 
 function isTrustedURL(value) {
   try {
@@ -24,4 +34,4 @@ function validateExport(text) {
   return text;
 }
 
-module.exports = { MAX_INPUT_BYTES, MAX_EXPORT_BYTES, APP_ORIGIN, isTrustedURL, assetName, validateExport };
+module.exports = { MAX_INPUT_BYTES, MAX_EXPORT_BYTES, APP_ORIGIN, isTrustedURL, assetName, validateExport, websiteURL };

@@ -3,7 +3,16 @@ import test from 'node:test';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
-const { assetName, isTrustedURL, validateExport } = require('../src/contracts.cjs');
+const { assetName, isTrustedURL, validateExport, websiteURL } = require('../src/contracts.cjs');
+
+test('website links resolve only to the two fixed public destinations', () => {
+  assert.equal(websiteURL('inkspot'), 'https://inkspot.science/');
+  assert.equal(websiteURL('mobgap'), 'https://github.com/mobilise-d/mobgap');
+  for (const value of ['https://example.com', 'https://inkspot.science/?data=recording',
+    'file:///etc/passwd', 'constructor', null, {}]) {
+    assert.throws(() => websiteURL(value), /Unknown website/);
+  }
+});
 
 test('only explicitly bundled assets are readable', () => {
   const allowed = new Set(['src/index.html', 'runtime/pyodide.asm.wasm']);

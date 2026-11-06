@@ -47,6 +47,46 @@ test('offline Electron import, both pipelines, tables, export, cancellation and 
     const errors = [];
     page.on('pageerror', (error) => errors.push(error.message));
     page.on('console', (message) => { if (message.type() === 'error') console.error('Renderer:', message.text()); });
+    await expect(page.locator('#start-screen')).toBeVisible();
+    await expect(page.locator('#analysis-screen')).toBeHidden();
+    await expect(page.locator('#start-screen')).toContainText('Observational Study Manager');
+    await expect(page.locator('#start-screen')).toContainText('Apache License 2.0');
+    const logo = page.getByRole('img', { name: 'Inkspot Science', exact: true });
+    await expect.poll(() => logo.evaluate((img) => img.complete && img.naturalWidth > 0)).toBe(true);
+    const logoBox = await logo.boundingBox();
+    expect(Math.abs(logoBox.x + logoBox.width / 2 - await page.evaluate(() => innerWidth / 2))).toBeLessThan(1);
+    await page.screenshot({ path: testInfo.outputPath('inkspot-start.png'), fullPage: true });
+    await page.setViewportSize({ width: 760, height: 600 });
+    await page.screenshot({ path: testInfo.outputPath('inkspot-start-small.png'), fullPage: true });
+    await page.setViewportSize({ width: 1150, height: 820 });
+
+    // Public links use the trusted main-process bridge; the app itself stays local.
+    await app.evaluate(({ shell }) => {
+      globalThis.openedWebsites = [];
+      shell.openExternal = async (url) => { globalThis.openedWebsites.push(url); };
+    });
+    const startURL = page.url();
+    await page.getByRole('link', { name: /inkspot.science/ }).click();
+    await page.getByRole('link', { name: /MobGap on GitHub/ }).click();
+    await expect.poll(() => app.evaluate(() => globalThis.openedWebsites)).toEqual([
+      'https://inkspot.science/', 'https://github.com/mobilise-d/mobgap',
+    ]);
+    expect(page.url()).toBe(startURL);
+    await expect(page.locator('#start-screen')).toBeVisible();
+    await app.evaluate(({ shell }) => { shell.openExternal = async () => { throw new Error('Browser unavailable'); }; });
+    await page.getByRole('link', { name: /inkspot.science/ }).click();
+    await expect(page.locator('#website-error')).toContainText('Could not open your browser');
+    await app.evaluate(({ shell }) => { shell.openExternal = async () => {}; });
+    await page.getByRole('link', { name: /inkspot.science/ }).click();
+    await expect(page.locator('#website-error')).toBeHidden();
+
+    // The start action opens the CWA picker without waiting for runtime readiness; cancellation leaves a usable workspace.
+    const canceledPicker = page.waitForEvent('filechooser');
+    await page.getByRole('button', { name: 'Analyse .CWA File', exact: true }).click();
+    await (await canceledPicker).setFiles([]);
+    await expect(page.locator('#analysis-screen')).toBeVisible();
+    await expect(page.locator('#start-screen')).toBeHidden();
+    await expect(page.locator('#filename')).toHaveText('No recording selected');
     await expect(page.locator('#status')).toHaveText('Ready to process a recording.', { timeout: 120_000 });
     expect(await page.evaluate(() => typeof window.require)).toBe('undefined');
     expect(await app.evaluate(({ BrowserWindow }) => {
@@ -57,6 +97,28 @@ test('offline Electron import, both pipelines, tables, export, cancellation and 
     expect(await page.evaluate(async () => {
       try { await fetch('https://example.com'); return true; } catch { return false; }
     })).toBe(false);
+
+    await page.getByRole('button', { name: 'Back to start', exact: true }).click();
+    const cwaPicker = page.waitForEvent('filechooser');
+    await page.getByRole('button', { name: 'Analyse .CWA File', exact: true }).click();
+    expect((await cwaPicker).isMultiple()).toBe(false);
+    await (await cwaPicker).setFiles(path.join(root, '.cache/cwa-tests/HA-six-axis.cwa'));
+    await expect(page.locator('#filename')).toHaveText('HA-six-axis.cwa');
+    await expect(page.locator('#sampling_rate_hz')).toHaveValue('100');
+    await expect(page.locator('#results')).toBeHidden();
+    await expect(page.locator('#cohort')).toHaveValue('');
+    await page.getByRole('button', { name: 'Run pipeline', exact: true }).click();
+    await expect(page.locator('#cohort')).toBeFocused();
+    await expect(page.locator('#results')).toBeHidden();
+    await participant(page);
+    await page.getByRole('button', { name: 'Run pipeline', exact: true }).click();
+    await expect(page.locator('#status')).toHaveText('Processing complete.', { timeout: 60_000 });
+    await page.getByRole('tab', { name: 'Strides (47)', exact: true }).click();
+    await expect(page.locator('#result-table tbody tr')).toHaveCount(47);
+    await page.getByRole('button', { name: 'Back to start', exact: true }).click();
+    await page.getByRole('button', { name: 'Open analysis workspace', exact: true }).click();
+    await expect(page.locator('#filename')).toHaveText('HA-six-axis.cwa');
+    await expect(page.locator('#result-table tbody tr')).toHaveCount(47);
 
     for (const [file, pipeline, strides] of [
       ['HA/001/TimeMeasure1_Test11_Trial1.csv', 'MobilisedPipelineHealthy', 47],

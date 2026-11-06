@@ -25,6 +25,9 @@ function status(message, working = false) {
 }
 
 function controls() {
+  $('start-cwa').disabled = busy;
+  $('open-workspace').disabled = busy;
+  $('show-start').disabled = busy;
   $('choose').disabled = busy;
   $('choose-cwa').disabled = busy;
   $('run').disabled = !ready || busy || !selected;
@@ -33,6 +36,13 @@ function controls() {
   $('recording_start_time').disabled = selected?.format === 'cwa';
   $('recording-start-field').hidden = selected?.format === 'cwa';
   $('cancel').hidden = !busy;
+}
+
+function showScreen(analysis) {
+  $('start-screen').hidden = analysis;
+  $('analysis-screen').hidden = !analysis;
+  window.scrollTo(0, 0);
+  $(analysis ? 'input-heading' : 'welcome-heading').focus();
 }
 
 function stopTimer() { clearTimeout(watchdog); started = null; }
@@ -226,6 +236,25 @@ function useRecording(chosen) {
         'Enter recording units, sample rate and participant measurements. The app does not infer these from signal values.';
     if (ready) status('Recording selected. Check the metadata and run the pipeline.');
     controls();
+}
+$('start-cwa').addEventListener('click', () => {
+  if (busy) return;
+  showScreen(true);
+  // Keep the file-input click in this user gesture, even while Python is still starting.
+  chooseRecording('cwa');
+});
+$('open-workspace').addEventListener('click', () => showScreen(true));
+$('show-start').addEventListener('click', () => showScreen(false));
+for (const link of document.querySelectorAll('[data-website]')) {
+  link.addEventListener('click', async (event) => {
+    event.preventDefault();
+    $('website-error').hidden = true;
+    try { await window.mobgap.openWebsite(link.dataset.website); }
+    catch {
+      $('website-error').textContent = `Could not open your browser. Visit ${link.href} in your browser.`;
+      $('website-error').hidden = false;
+    }
+  });
 }
 $('choose').addEventListener('click', () => chooseRecording('csv'));
 $('choose-cwa').addEventListener('click', () => chooseRecording('cwa'));
