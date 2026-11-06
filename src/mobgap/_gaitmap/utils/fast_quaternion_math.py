@@ -1,5 +1,6 @@
 import numpy as np
-from numba import njit
+
+from mobgap._utils_internal.numba_backend import njit
 
 
 @njit(cache=True)

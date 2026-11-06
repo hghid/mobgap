@@ -1,8 +1,8 @@
 from typing import Optional
 
-import numba
 import numpy as np
-from numba import njit
+
+from mobgap._utils_internal.numba_backend import interval_list, njit
 
 
 def merge_intervals(input_array: np.ndarray, gap_size: int = 0) -> np.ndarray:
@@ -45,9 +45,9 @@ def merge_intervals(input_array: np.ndarray, gap_size: int = 0) -> np.ndarray:
 
 
 @njit
-def _solve_overlap(input_array: np.ndarray, gap_size: int) -> numba.typed.List:
+def _solve_overlap(input_array: np.ndarray, gap_size: int):
     """Merge intervals that are overlapping and that are a distance less or equal to gap_size from each other."""
-    stack = numba.typed.List()
+    stack = interval_list()
     stack.append(input_array[0])
 
     for i in range(1, len(input_array)):

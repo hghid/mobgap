@@ -2,12 +2,12 @@ from functools import cache
 from importlib.resources import files
 from typing import Any, ClassVar, Literal, Optional, Self, Union, Unpack
 
-import numba
 import numpy as np
 import pandas as pd
 from scipy.signal import butter, firwin
 
 from mobgap._docutils import inherit_docstring_from
+from mobgap._utils_internal.numba_backend import jit
 from mobgap.data_transform._utils import chain_transformers
 from mobgap.data_transform.base import (
     BaseFilter,
@@ -230,7 +230,7 @@ class FirFilter(ScipyFilter):
         ), np.array([1])
 
 
-@numba.jit(nopython=True, cache=True)
+@jit(nopython=True, cache=True)
 def _hampel_filter_numba(data: np.ndarray, k: int, n_sigma: float = 3.0, min_abs_deviation: float = 0.0) -> np.ndarray:
     """Hampel filter implementation using Numba for performance optimization."""
     n = len(data)

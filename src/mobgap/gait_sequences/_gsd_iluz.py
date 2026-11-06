@@ -4,12 +4,12 @@ from typing import Any, Final, Literal, Self, Unpack
 
 import numpy as np
 import pandas as pd
-from numba import float32, float64, guvectorize, int32
 from tpcp import cf
 from tpcp.misc import classproperty, set_defaults
 
 from mobgap._docutils import make_filldoc
 from mobgap._utils_internal.misc import timed_action_method
+from mobgap._utils_internal.numba_backend import peak_count
 from mobgap.consts import GRAV_MS2
 from mobgap.data_transform import FirFilter
 from mobgap.data_transform.base import BaseFilter
@@ -624,7 +624,7 @@ class GsdIluzAdaptiveGravity(GsdIluz):
 # Note: I HATE THIS! Implementing a peak detection algorithm by hand feels like a huge stupid antipattern.
 #       It makes everything harder to maintain, and is exactly the thing we wanted to avoid with the reimplementation...
 #       However, doing it this way results in an up to 2x speedup on long recordings, so I guess it is worth it.
-@guvectorize([(float64[:], float32, float32, int32[:])], "(n),(),()->()", target="parallel", cache=True)
+@peak_count
 def _find_n_peaks_2d(signal: np.ndarray, threshold: float, distance: float, n_peaks: np.ndarray) -> None:
     """Parallelized version of find_n_peaks for processing each row of a 2D array.
 
@@ -654,7 +654,7 @@ def _find_n_peaks_2d(signal: np.ndarray, threshold: float, distance: float, n_pe
     n_peaks[0] = count
 
 
-@guvectorize([(float64[:], float32, float32, int32[:])], "(n),(),()->()", target="parallel", cache=True)
+@peak_count
 def _find_n_peaks_exact_matlab_replication(  # noqa: C901, PLR0912
     signal: np.ndarray, threshold: float, min_distance: float, peaks_out: np.ndarray
 ) -> None:

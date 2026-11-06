@@ -1,0 +1,26 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import { createRequire } from 'node:module';
+
+const require = createRequire(import.meta.url);
+const { assetName, isTrustedURL, validateExport } = require('../src/contracts.cjs');
+
+test('only explicitly bundled assets are readable', () => {
+  const allowed = new Set(['src/index.html', 'runtime/pyodide.asm.wasm']);
+  assert.equal(assetName('mobgap://app/src/index.html', allowed), 'src/index.html');
+  for (const url of ['mobgap://app/src/../main.cjs', 'mobgap://other/src/index.html',
+    'mobgap://app/runtime/%2e%2e%2fpackage.json', 'mobgap://app/%zz',
+    'mobgap://app/src%5c..%5cmain.cjs', 'file:///etc/passwd']) {
+    assert.equal(assetName(url, allowed), null, url);
+  }
+  assert.equal(isTrustedURL('https://app/src/index.html'), false);
+  assert.equal(isTrustedURL('mobgap://user@app/src/index.html'), false);
+});
+
+test('result export requires the versioned result contract and bounded size', () => {
+  const text = JSON.stringify({ schema_version: 1, tables: {}, provenance: {} });
+  assert.equal(validateExport(text), text);
+  assert.throws(() => validateExport('{}'), /Invalid/);
+  assert.throws(() => validateExport({}), /too large/);
+  assert.throws(() => validateExport(' '.repeat(32 * 1024 * 1024 + 1)), /too large/);
+});

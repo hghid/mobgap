@@ -1,0 +1,85 @@
+name: Electron desktop
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "electron/**"
+      - "src/**"
+      - "pyproject.toml"
+      - "uv.lock"
+      - "example_data/data_csv/**"
+      - "example_data/data/ax6/**"
+      - ".github/workflows/electron.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: electron-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  desktop:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest, macos-15-intel]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: electron
+    env:
+      MPLBACKEND: Agg
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: electron/package-lock.json
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          python-version: "3.14"
+          enable-cache: true
+      - name: Install native comparison environment
+        run: uv sync --project .. --locked --no-dev --group test
+      - run: npm ci
+      - run: npm run runtime:prepare
+      - run: npm test
+      - run: npm run test:adapter
+      - name: Install matching native CWA oracle outside the application runtime
+        run: uv pip install --target .cache/cwa-native --no-deps cwa-reader-rs==0.5.0
+      - run: npm run test:cwa
+      - run: npm run test:parity
+      - name: Test development app (Linux)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a npm run test:e2e
+      - name: Test development app (macOS / Windows)
+        if: runner.os != 'Linux'
+        run: npm run test:e2e
+      - run: npm run make
+      - name: Test packaged app (Linux)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a npm run test:packaged
+      - name: Test packaged app (macOS / Windows)
+        if: runner.os != 'Linux'
+        run: npm run test:packaged
+      - uses: actions/upload-artifact@v7
+        with:
+          name: mobgap-${{ matrix.os }}
+          path: |
+            electron/out/make/**/*.zip
+            electron/out/make/**/*.exe
+            electron/out/make/**/*.nupkg
+            electron/out/make/**/RELEASES
+          if-no-files-found: error
+          compression-level: 0
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: desktop-test-failure-${{ matrix.os }}
+          path: electron/test-results/

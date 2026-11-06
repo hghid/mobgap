@@ -4,11 +4,11 @@ from typing import Any, Self, Unpack
 import numpy as np
 import pandas as pd
 from intervaltree import IntervalTree
-from numba import njit
 from scipy.signal import find_peaks, hilbert
 
 from mobgap._docutils import make_filldoc
 from mobgap._utils_internal.misc import timed_action_method
+from mobgap._utils_internal.numba_backend import njit
 from mobgap.consts import BF_ACC_COLS, GRAV_MS2, SF_ACC_COLS
 from mobgap.data_transform import (
     CwtFilter,

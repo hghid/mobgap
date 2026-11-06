@@ -1,0 +1,41 @@
+{
+  "name": "mobgap-desktop",
+  "productName": "MobGap",
+  "version": "0.1.0",
+  "description": "Offline Mobilise-D gait analysis using Python and WebAssembly",
+  "main": "src/main.cjs",
+  "private": true,
+  "author": "MobGap contributors",
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=22.17.0"
+  },
+  "overrides": {
+    "glob": "14.0.4",
+    "minimatch": "11.0.5"
+  },
+  "scripts": {
+    "runtime:lock": "node scripts/prepare-runtime.mjs --update-lock",
+    "runtime:prepare": "node scripts/prepare-runtime.mjs",
+    "start": "electron-forge start",
+    "package": "electron-forge package",
+    "make": "electron-forge make",
+    "make:windows:installer": "electron-forge make --platform=win32 --arch=x64 --targets=@electron-forge/maker-squirrel",
+    "test": "node --test tests/*.test.mjs",
+    "test:e2e": "playwright test",
+    "test:packaged": "node scripts/test-packaged.mjs",
+    "test:adapter": "uv run --project .. --no-sync python -m pytest tests/test_adapter.py",
+    "test:cwa": "node scripts/test-cwa.mjs",
+    "test:runtime": "node scripts/test-runtime.mjs",
+    "test:parity": "node scripts/test-runtime.mjs --compare --all"
+  },
+  "devDependencies": {
+    "@electron-forge/cli": "8.0.1",
+    "@electron-forge/maker-squirrel": "8.0.1",
+    "@electron-forge/maker-zip": "8.0.1",
+    "@mobilise-d/cwa-reader": "https://github.com/mobilise-d/cwa_reader_rs/releases/download/v0.5.0/mobilise-d-cwa-reader-0.5.0.tgz",
+    "@playwright/test": "1.65.0",
+    "electron": "45.2.3",
+    "pyodide": "314.0.7"
+  }
+}

@@ -1,9 +1,9 @@
 """Implementation of the MadgwickAHRS."""
 
 import numpy as np
-from numba import njit
 
 from mobgap._gaitmap.utils.fast_quaternion_math import rate_of_change_from_gyro
+from mobgap._utils_internal.numba_backend import njit
 
 
 @njit()

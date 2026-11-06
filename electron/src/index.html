@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MobGap — gait analysis</title>
+  <link rel="stylesheet" href="styles.css">
+  <script type="module" src="renderer.mjs"></script>
+</head>
+<body>
+  <header><div><span class="eyebrow">MOBILISE-D</span><h1>Gait analysis</h1></div><span class="local-badge">● Runs locally · works offline</span></header>
+  <main>
+    <section class="card" aria-labelledby="input-heading">
+      <div class="section-top"><div><h2 id="input-heading">Choose a recording</h2><p>Run the preconfigured healthy or impaired pipeline on a lower-back IMU recording.</p></div><div class="import-buttons"><button id="choose">Choose CSV…</button><button id="choose-cwa" class="secondary">Choose CWA…</button></div></div>
+      <div class="file-line"><strong id="filename">No recording selected</strong><span id="example-label"></span></div>
+      <input id="cwa-file" type="file" accept=".cwa" hidden>
+      <p class="hint" id="format-hint">Recordings are processed separately for each calendar day, split at midnight on the device clock. CSV columns: samples, acc_x, acc_y, acc_z, gyr_x, gyr_y, gyr_z. Both formats require the Mobilise-D aligned lower-back sensor frame. No sample-count cap. CSV: up to 64 MiB. CWA: no file-size cap.</p>
+      <form id="settings">
+        <fieldset id="settings-fields">
+          <legend>Recording & participant</legend>
+          <p class="hint" id="metadata-hint">Bundled example recordings are recognised by their contents and use their published metadata. Other recordings require your settings.</p>
+          <div class="settings-grid">
+            <label><span id="sampling-rate-label">Sampling rate (Hz)</span><input id="sampling_rate_hz" name="sampling_rate_hz" type="number" min="0.01" max="1000" step="any" required></label>
+            <label>Acceleration units<select id="acceleration_unit" name="acceleration_unit" required><option value="">Select units</option><option value="g">g</option><option value="m/s²">m/s²</option></select></label>
+            <label>Cohort<select id="cohort" name="cohort" required><option value="">Select cohort</option><option value="HA">HA — healthy</option><option value="COPD">COPD</option><option value="CHF">CHF</option><option value="MS">MS</option><option value="PD">PD</option><option value="PFF">PFF</option></select></label>
+            <label>Participant height (m)<input id="height_m" name="height_m" type="number" min="0.01" max="3" step="any" required></label>
+            <label>Sensor height (m)<input id="sensor_height_m" name="sensor_height_m" type="number" min="0.01" max="3" step="any" required></label>
+            <label>Measurement condition<select id="measurement_condition" name="measurement_condition" required><option value="">Select condition</option><option value="laboratory">Laboratory</option><option value="free_living">Free living</option></select></label>
+            <label id="recording-start-field">CSV recording start (device clock)<input id="recording_start_time" name="recording_start_time" type="datetime-local" step="0.000001" required></label>
+          </div>
+        </fieldset>
+        <div class="run-line"><button id="run" type="submit" disabled>Run pipeline</button><button id="cancel" type="button" class="secondary" hidden>Cancel</button><span id="pipeline-hint" class="hint">HA / COPD / CHF → healthy · MS / PD / PFF → impaired</span></div>
+      </form>
+    </section>
+    <section class="card status-card" aria-labelledby="status-heading">
+      <div class="section-top"><h2 id="status-heading">Progress</h2><span id="elapsed" class="hint"></span></div>
+      <p id="status" role="status" aria-live="polite">Starting local runtime…</p>
+      <progress id="progress" aria-label="Processing progress"></progress>
+      <p id="stage-note" class="hint">Preparing the bundled Python environment. No downloads are needed.</p>
+      <div id="error" role="alert" hidden><strong id="error-message"></strong><details><summary>Details</summary><pre id="error-details"></pre></details><button id="retry" class="secondary">Restart runtime</button></div>
+    </section>
+    <section id="results" class="card" aria-labelledby="results-heading" hidden>
+      <h2 id="results-heading">Results</h2><p id="result-summary"></p>
+      <div class="results-toolbar"><label id="day-field">Calendar day<select id="day-select" aria-label="Calendar day"></select></label><button id="save" class="secondary">Save results…</button></div>
+      <div id="tabs" class="tabs" role="tablist" aria-label="Results views"></div>
+      <div id="timeseries-panel" role="tabpanel" aria-labelledby="tab-timeseries" hidden>
+        <label class="sensor-field">Sensor values<select id="plot-group"><option value="accelerometer">Accelerometer</option><option value="gyroscope">Gyroscope</option></select></label>
+        <p id="plot-empty" class="hint" hidden>No decoded signal is available for this day.</p>
+        <svg id="timeseries-plot" viewBox="0 0 1000 360" role="img" aria-describedby="plot-caption"></svg>
+        <p id="plot-caption" class="hint"></p>
+      </div>
+      <p id="empty" class="hint" hidden></p>
+      <div class="table-wrap" role="tabpanel" id="table-panel"><table id="result-table"><thead></thead><tbody></tbody></table></div>
+      <div id="pagination" class="pagination"><span id="row-count" class="hint"></span><div><button id="previous" class="secondary">Previous</button><button id="next" class="secondary">Next</button></div></div>
+      <p id="table-note" class="hint">— means unavailable or not applicable. Short lab recordings may produce no valid walking bouts or aggregated statistics.</p>
+      <details id="warnings" hidden><summary id="warning-summary"></summary><ul id="warning-list"></ul></details>
+    </section>
+  </main>
+  <footer>MobGap · Preconfigured Mobilise-D pipelines · Your recording stays on this device.</footer>
+</body>
+</html>

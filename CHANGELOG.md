@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add an offline Electron application in `electron/` to run the preconfigured healthy and impaired Mobilise-D
+  pipelines on CSV and six-axis CWA recordings, with participant metadata, progress, result tables, and JSON export.
+  Provide portable ZIP builds and configure a Windows Squirrel installer with shortcut and uninstall handling.
+  CWA input has no application file-size cap. Process midnight-aligned calendar days separately, including shorter
+  first/last days, with per-day results and exports and no sample-count cap. Include subsampled daily CWA
+  accelerometer/gyroscope plots and save controls beside the day selector. CWA reads only required file ranges;
+  CSV requires its recording start time for calendar alignment. Bundle the shared Rust/WebAssembly CWA reader
+  with cubic resampling and a serial Pyodide backend for the
+  existing numerical kernels while retaining Numba acceleration on native Python.
+
 - Add `participant_metadata_override` to `GenericMobilisedDataset` for an alternate `infoForAlgo.mat` path or
   normalized metadata shared across all rows. Pass `test_level_names=None` (now the default) to infer index level
   names from the first file's recording hierarchy.
