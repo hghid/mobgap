@@ -5,8 +5,20 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from electron.python.adapter import CHANNELS, calendar_days, csv_days, load_csv, load_cwa, process_csv, process_csv_day
+from electron.python.adapter import (
+    CHANNELS,
+    calendar_days,
+    csv_days,
+    load_csv,
+    load_cwa,
+    process_csv,
+    process_csv_day,
+    process_cwa,
+    validate_options,
+)
 from mobgap.consts import GRAV_MS2
+from mobgap.utils.conversions import to_body_frame
+from mobgap.weartime import WtdMegaritisSignal
 
 EXAMPLES = Path(__file__).resolve().parents[2] / "example_data/data_csv"
 
@@ -173,3 +185,64 @@ def test_tiny_first_boundary_day_is_reported_without_losing_the_next_day(frame, 
     assert results[0]["provenance"]["samples"] == 50
     assert results[1]["provenance"]["samples"] == 950
     assert "status" not in results[1]
+
+
+@pytest.mark.parametrize("start", ["2024-01-02T06:59:30", "2024-01-02T21:59:30", "2024-01-02T23:00:00"])
+def test_weartime_matches_native_detector_with_actual_partial_day_waking_hours(start):
+    options = {
+        "sampling_rate_hz": 100,
+        "acceleration_unit": "g",
+        "pipeline_type": "weartime",
+        "recording_start_time": start,
+    }
+    raw = (EXAMPLES / "HA/001/TimeMeasure1_Test11_Trial1.csv").read_bytes()
+    data = to_body_frame(load_csv(raw, options))
+    # A fixed-offset index is an independent reference for local clock intersections.
+    # The adapter itself keeps device time naive and avoids allocating a timestamp index.
+    data.index = pd.date_range(pd.Timestamp(start, tz="UTC"), periods=len(data), freq="10ms")
+    expected = WtdMegaritisSignal().detect(data, sampling_rate_hz=100)
+    result = process_csv(raw, options)
+    summary = dict(
+        zip(result["tables"]["weartime_summary"]["columns"], result["tables"]["weartime_summary"]["rows"][0])
+    )
+    assert summary["total_weartime_min"] == pytest.approx(expected.total_weartime_min_)
+    assert summary["total_weartime_during_waking_min"] == pytest.approx(expected.total_weartime_during_waking_min_)
+    intervals = result["tables"]["weartime"]
+    frame = pd.DataFrame(intervals["rows"], columns=intervals["columns"])
+    np.testing.assert_array_equal(frame[["start", "end"]], expected.weartime_list_[["start", "end"]])
+    assert result["provenance"]["pipeline"] == "WtdMegaritisSignal"
+    assert result["provenance"]["first_sample_device_time"] == start
+    json.dumps(result, allow_nan=False)
+
+
+def test_weartime_validation_does_not_require_participant_metadata():
+    options = {"sampling_rate_hz": 100, "acceleration_unit": "g", "pipeline_type": "weartime"}
+    validate_options(options)
+    with pytest.raises(ValueError, match="at least 50"):
+        validate_options({**options, "sampling_rate_hz": 49.99})
+    with pytest.raises(ValueError, match="Select Mobilise-D or Weartime"):
+        validate_options({**options, "pipeline_type": "other"})
+    raw = (EXAMPLES / "HA/001/TimeMeasure1_Test11_Trial1.csv").read_bytes()
+    with pytest.raises(ValueError, match="start time"):
+        process_csv(raw, options)
+
+
+def test_weartime_midnight_splits_and_cwa_use_their_real_clock_and_preserve_short_day_status(frame):
+    options = {
+        "sampling_rate_hz": 100,
+        "acceleration_unit": "g",
+        "pipeline_type": "weartime",
+        "recording_start_time": "2024-01-02T23:59:59.500000",
+    }
+    frame["acc_x"] = 1.0
+    data = load_csv(csv_bytes(frame), options)
+    days = csv_days(data, options)
+    results = [process_csv_day(data, day, options, "0" * 64) for day in days]
+    assert results[0]["status"] == "skipped"
+    assert list(results[0]["tables"]) == ["weartime_summary", "weartime", "weartime_diagnostics"]
+    assert results[1]["provenance"]["first_sample_device_time"] == "2024-01-03T00:00:00"
+    channels = {name: frame[name].to_numpy(dtype=np.float32) for name in CHANNELS}
+    timestamps = np.arange(1000, dtype=np.int64) * 10_000 + 1_704_178_800_000_001
+    result = process_cwa(b"fixture", channels, timestamps, {}, options)
+    assert result["provenance"]["first_sample_device_time"] == "2024-01-02T07:00:00.000001"
+    assert result["provenance"]["source"]["first_sample_device_time_us"] == str(timestamps[0])

@@ -27,7 +27,7 @@
   <header><div><span class="eyebrow">MOBILISE-D</span><h1>Gait analysis</h1></div><div class="header-actions"><button id="show-start" class="text-button">Back to start</button><span class="local-badge">● Runs locally · works offline</span></div></header>
   <main>
     <section class="card" aria-labelledby="input-heading">
-      <div class="section-top"><div><h2 id="input-heading" tabindex="-1">Choose a recording</h2><p>Run the preconfigured healthy or impaired pipeline on a lower-back IMU recording.</p></div><div class="import-buttons"><button id="choose">Choose CSV…</button><button id="choose-cwa" class="secondary">Choose CWA…</button></div></div>
+      <div class="section-top"><div><h2 id="input-heading" tabindex="-1">Choose a recording</h2><p>Run Mobilise-D gait analysis or weartime detection on a lower-back IMU recording.</p></div><div class="import-buttons"><button id="choose">Choose CSV…</button><button id="choose-cwa" class="secondary">Choose CWA…</button></div></div>
       <div class="file-line"><strong id="filename">No recording selected</strong><span id="example-label"></span></div>
       <input id="cwa-file" type="file" accept=".cwa" hidden>
       <p class="hint" id="format-hint">Recordings are processed separately for each calendar day, split at midnight on the device clock. CSV columns: samples, acc_x, acc_y, acc_z, gyr_x, gyr_y, gyr_z. Both formats require the Mobilise-D aligned lower-back sensor frame. No sample-count cap. CSV: up to 64 MiB. CWA: no file-size cap.</p>
@@ -45,7 +45,7 @@
             <label id="recording-start-field">CSV recording start (device clock)<input id="recording_start_time" name="recording_start_time" type="datetime-local" step="0.000001" required></label>
           </div>
         </fieldset>
-        <div class="run-line"><button id="run" type="submit" disabled>Run pipeline</button><button id="cancel" type="button" class="secondary" hidden>Cancel</button><span id="pipeline-hint" class="hint">HA / COPD / CHF → healthy · MS / PD / PFF → impaired</span></div>
+        <div class="run-line"><label class="pipeline-field">Pipeline type<select id="pipeline_type" name="pipeline_type"><option value="mobilised">Mobilise-D</option><option value="weartime">Weartime</option></select></label><button id="run" type="submit" disabled>Run</button><button id="cancel" type="button" class="secondary" hidden>Cancel</button><span id="pipeline-hint" class="hint">HA / COPD / CHF → healthy · MS / PD / PFF → impaired</span></div>
       </form>
     </section>
     <section class="card status-card" aria-labelledby="status-heading">
@@ -57,7 +57,7 @@
     </section>
     <section id="results" class="card" aria-labelledby="results-heading" hidden>
       <h2 id="results-heading">Results</h2><p id="result-summary"></p>
-      <div class="results-toolbar"><label id="day-field">Calendar day<select id="day-select" aria-label="Calendar day"></select></label><button id="save" class="secondary">Save results…</button></div>
+      <div class="results-toolbar"><label id="day-field">Calendar day<select id="day-select" aria-label="Calendar day"></select></label><button id="save" class="secondary">Save results…</button><button id="save-csv" class="secondary">Export table CSV…</button></div>
       <div id="tabs" class="tabs" role="tablist" aria-label="Results views"></div>
       <div id="timeseries-panel" role="tabpanel" aria-labelledby="tab-timeseries" hidden>
         <label class="sensor-field">Sensor values<select id="plot-group"><option value="accelerometer">Accelerometer</option><option value="gyroscope">Gyroscope</option></select></label>
@@ -72,7 +72,7 @@
       <details id="warnings" hidden><summary id="warning-summary"></summary><ul id="warning-list"></ul></details>
     </section>
   </main>
-  <footer>MobGap · Preconfigured Mobilise-D pipelines · Your recording stays on this device.</footer>
+  <footer>MobGap · Mobilise-D and weartime analysis · Your recording stays on this device.</footer>
   </div>
 </body>
 </html>

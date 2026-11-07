@@ -34,4 +34,24 @@ function validateExport(text) {
   return text;
 }
 
-module.exports = { MAX_INPUT_BYTES, MAX_EXPORT_BYTES, APP_ORIGIN, isTrustedURL, assetName, validateExport, websiteURL };
+/** Encode the complete current table, including rows outside the visible page, as UTF-8 CSV. */
+function tableCsvExport(payload) {
+  if (!payload || !/^[a-z_]{1,40}$/.test(payload.name) ||
+      !/^(combined|\d{4}-\d{2}-\d{2})$/.test(payload.day)) throw new Error('Invalid CSV export name.');
+  const table = payload.table;
+  if (!table || !Array.isArray(table.columns) || !table.columns.length ||
+      !table.columns.every((column) => typeof column === 'string') || !Array.isArray(table.rows) ||
+      !table.rows.every((row) => Array.isArray(row) && row.length === table.columns.length)) {
+    throw new Error('Invalid result table.');
+  }
+  const quote = (value) => {
+    if (typeof value === 'number' && !Number.isFinite(value)) throw new Error('Invalid CSV numeric value.');
+    const text = value === null ? '' : typeof value === 'object' ? JSON.stringify(value) : String(value);
+    return `"${text.replaceAll('"', '""')}"`;
+  };
+  const contents = '\uFEFF' + [table.columns, ...table.rows].map((row) => row.map(quote).join(',')).join('\r\n') + '\r\n';
+  if (Buffer.byteLength(contents) > MAX_EXPORT_BYTES) throw new Error('CSV export is too large.');
+  return { contents, filename: `mobgap-${payload.day}-${payload.name}.csv` };
+}
+
+module.exports = { MAX_INPUT_BYTES, MAX_EXPORT_BYTES, APP_ORIGIN, isTrustedURL, assetName, validateExport, websiteURL, tableCsvExport };

@@ -13,12 +13,11 @@
 # limitations under the License.
 
 from datetime import time
-from typing import Any, Union
+from typing import Any, Self, Union, Unpack
 
 import numpy as np
 import pandas as pd
 from scipy.signal import welch
-from typing_extensions import Self, Unpack
 
 from mobgap._utils_internal.misc import timed_action_method
 from mobgap.utils.array_handling import bool_array_to_start_end_array

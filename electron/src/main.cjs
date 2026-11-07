@@ -5,7 +5,7 @@ if (handleWindowsInstall(app)) return;
 const { createHash } = require('node:crypto');
 const { open, readFile, writeFile } = require('node:fs/promises');
 const path = require('node:path');
-const { MAX_INPUT_BYTES, APP_ORIGIN, isTrustedURL, assetName, validateExport, websiteURL } = require('./contracts.cjs');
+const { MAX_INPUT_BYTES, APP_ORIGIN, isTrustedURL, assetName, validateExport, websiteURL, tableCsvExport } = require('./contracts.cjs');
 
 protocol.registerSchemesAsPrivileged([{
   scheme: 'mobgap', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true },
@@ -50,7 +50,7 @@ app.whenReady().then(async () => {
     return;
   }
   const allowed = new Set(['src/index.html', 'src/styles.css', 'src/renderer.mjs', 'src/worker.mjs', 'src/cwa-import.mjs',
-    'src/timeseries.mjs', 'src/timeseries-plot.mjs', 'src/inkspot-logo.png',
+    'src/timeseries.mjs', 'src/timeseries-plot.mjs', 'src/results.mjs', 'src/inkspot-logo.png',
     'runtime/manifest.json', ...Object.keys(manifest.integrity).map((name) => `runtime/${name}`)]);
   protocol.handle('mobgap', async (request) => {
     const name = assetName(request.url, allowed);
@@ -108,11 +108,24 @@ app.whenReady().then(async () => {
   ipcMain.handle('results:save', async (event, text) => {
     requireSender(event);
     const contents = validateExport(text);
-    const date = JSON.parse(contents).provenance.calendar_day?.date;
-    const defaultPath = /^\d{4}-\d{2}-\d{2}$/.test(date || '') ? `mobgap-${date}-results.json` : 'mobgap-results.json';
+    const provenance = JSON.parse(contents).provenance;
+    const date = provenance.calendar_day?.date;
+    const defaultPath = provenance.view === 'combined' ? 'mobgap-combined-results.json' :
+      /^\d{4}-\d{2}-\d{2}$/.test(date || '') ? `mobgap-${date}-results.json` : 'mobgap-results.json';
     const chosen = await dialog.showSaveDialog(window, {
-      title: 'Save selected day results and run metadata', defaultPath,
+      title: 'Save results and run metadata', defaultPath,
       filters: [{ name: 'JSON results', extensions: ['json'] }],
+    });
+    if (chosen.canceled || !chosen.filePath) return false;
+    await writeFile(chosen.filePath, contents, 'utf8');
+    return true;
+  });
+  ipcMain.handle('results:save-csv', async (event, payload) => {
+    requireSender(event);
+    const { contents, filename } = tableCsvExport(payload);
+    const chosen = await dialog.showSaveDialog(window, {
+      title: 'Export current result table as CSV', defaultPath: filename,
+      filters: [{ name: 'CSV table', extensions: ['csv'] }],
     });
     if (chosen.canceled || !chosen.filePath) return false;
     await writeFile(chosen.filePath, contents, 'utf8');

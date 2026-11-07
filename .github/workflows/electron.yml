@@ -55,6 +55,7 @@ jobs:
         run: uv pip install --target .cache/cwa-native --no-deps cwa-reader-rs==0.5.0
       - run: npm run test:cwa
       - run: npm run test:parity
+      - run: npm run test:weartime
       - name: Test development app (Linux)
         if: runner.os == 'Linux'
         run: xvfb-run -a npm run test:e2e

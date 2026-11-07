@@ -25,12 +25,16 @@ from packaging.requirements import Requirement
 from mobgap.consts import GRAV_MS2
 from mobgap.data import GaitDatasetFromData
 from mobgap.pipeline import MobilisedPipelineUniversal
+from mobgap.utils.conversions import to_body_frame
+from mobgap.weartime import WtdMegaritisSignal
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
 CHANNELS = ["acc_x", "acc_y", "acc_z", "gyr_x", "gyr_y", "gyr_z"]
 COHORTS = {"HA", "COPD", "CHF", "MS", "PD", "PFF"}
+GAIT_TABLES = ["aggregated", "walking_bouts", "strides", "gait_sequences", "initial_contacts"]
+WEARTIME_TABLES = ["weartime_summary", "weartime", "weartime_diagnostics"]
 RUNTIME_NOTICES = []
 
 
@@ -89,7 +93,7 @@ def short_day_result(samples: int, options: dict[str, Any], digest: str, input_f
         "status": "skipped",
         "tables": {
             name: {"columns": [], "rows": []}
-            for name in ["aggregated", "walking_bouts", "strides", "gait_sequences", "initial_contacts"]
+            for name in (WEARTIME_TABLES if options.get("pipeline_type") == "weartime" else GAIT_TABLES)
         },
         "warnings": ["This boundary day contains fewer than 5 seconds of data; the pipeline was not run."],
         "provenance": {
@@ -100,6 +104,7 @@ def short_day_result(samples: int, options: dict[str, Any], digest: str, input_f
             "duration_s": samples / options["sampling_rate_hz"],
             "elapsed_s": 0,
             "pipeline": "Not run (short boundary day)",
+            "pipeline_type": options.get("pipeline_type", "mobilised"),
         },
     }
 
@@ -123,6 +128,8 @@ def process_csv_day(
         time.perf_counter(),
         input_format="csv",
         input_sha256=digest,
+        start_time=datetime.fromisoformat(options["recording_start_time"])
+        + timedelta(seconds=day["sample_start"] / options["sampling_rate_hz"]),
     )
 
 
@@ -147,7 +154,13 @@ def validate_runtime() -> None:
 
 def validate_options(options: dict[str, Any]) -> None:
     """Reject incomplete metadata instead of guessing physiological inputs."""
-    for name, upper in [("sampling_rate_hz", 1000), ("height_m", 3), ("sensor_height_m", 3)]:
+    pipeline_type = options.get("pipeline_type", "mobilised")
+    if pipeline_type not in {"mobilised", "weartime"}:
+        raise ValueError("Select Mobilise-D or Weartime.")
+    numeric = [("sampling_rate_hz", 1000)]
+    if pipeline_type == "mobilised":
+        numeric.extend([("height_m", 3), ("sensor_height_m", 3)])
+    for name, upper in numeric:
         value = options.get(name)
         if (
             isinstance(value, bool)
@@ -156,12 +169,16 @@ def validate_options(options: dict[str, Any]) -> None:
             or not 0 < value <= upper
         ):
             raise ValueError(f"Provide a valid {name} greater than zero and at most {upper}.")
+    if options.get("acceleration_unit") not in {"g", "m/s²"}:
+        raise ValueError("Select acceleration units explicitly.")
+    if pipeline_type == "weartime":
+        if options["sampling_rate_hz"] < 50:
+            raise ValueError("Weartime requires a sampling rate of at least 50 Hz.")
+        return
     if options["sensor_height_m"] > options["height_m"]:
         raise ValueError("Sensor height cannot exceed participant height.")
     if options.get("cohort") not in COHORTS:
         raise ValueError("Select a supported cohort (HA, COPD, CHF, MS, PD, PFF).")
-    if options.get("acceleration_unit") not in {"g", "m/s²"}:
-        raise ValueError("Select acceleration units explicitly.")
     if options.get("measurement_condition") not in {"laboratory", "free_living"}:
         raise ValueError("Select laboratory or free-living measurement conditions.")
 
@@ -249,6 +266,7 @@ def process_cwa(
         started,
         input_format="cwa",
         input_sha256=input_sha256,
+        start_time=datetime(1970, 1, 1) + timedelta(microseconds=int(timestamps[0])),
         source={
             "header": header,
             "resample_method": "cubic",
@@ -273,7 +291,17 @@ def process_csv(
     started = time.perf_counter()
     report("validate", "Validating CSV and participant metadata…")
     data = load_csv(csv_bytes, options)
-    return _process_data(data, csv_bytes, options, report, started, input_format="csv")
+    return _process_data(
+        data,
+        csv_bytes,
+        options,
+        report,
+        started,
+        input_format="csv",
+        start_time=datetime.fromisoformat(options["recording_start_time"])
+        if options.get("recording_start_time")
+        else None,
+    )
 
 
 def _process_data(
@@ -286,7 +314,12 @@ def _process_data(
     input_format: str,
     source: dict[str, Any] | None = None,
     input_sha256: str | None = None,
+    start_time: datetime | None = None,
 ) -> dict[str, Any]:
+    if options.get("pipeline_type") == "weartime":
+        return _process_weartime(
+            data, original_bytes, options, report, started, input_format, input_sha256, source, start_time
+        )
     key = "recording"
     participant = {name: options[name] for name in ["cohort", "height_m", "sensor_height_m"]}
     dataset = GaitDatasetFromData(
@@ -317,6 +350,7 @@ def _process_data(
         "warnings": list(dict.fromkeys([*RUNTIME_NOTICES, *(str(item.message) for item in captured)])),
         "provenance": {
             "pipeline": type(pipeline.pipeline_).__name__,
+            "pipeline_type": "mobilised",
             "parameters": repr(pipeline.pipeline_.get_params(deep=False)),
             "options": options,
             "input_sha256": input_sha256 if input_sha256 is not None else hashlib.sha256(original_bytes).hexdigest(),
@@ -329,5 +363,95 @@ def _process_data(
                 name: version(name) for name in ["mobgap", "numpy", "pandas", "scipy", "scikit-learn", "tpcp"]
             },
             "sensor_frame": "Mobilise-D aligned lower-back sensor; gyroscope in deg/s",
+        },
+    }
+
+
+def _process_weartime(
+    data: pd.DataFrame,
+    original_bytes: bytes | None,
+    options: dict[str, Any],
+    report: Callable[[str, str], None],
+    started: float,
+    input_format: str,
+    input_sha256: str | None,
+    source: dict[str, Any] | None,
+    start_time: datetime | None,
+) -> dict[str, Any]:
+    """Run the unchanged signal detector on one day, using the actual naive clock for waking hours.
+
+    Sample intervals stay relative to this batch. Waking-hour intersections use
+    ceil-rounded sample boundaries at 07:00 and 22:00 on the device clock, so a
+    partial first day never acquires the detector property's midnight assumption.
+    No timezone is assigned or inferred, and no per-sample timestamp index is allocated.
+    """
+    if start_time is None or start_time.tzinfo is not None:
+        raise ValueError("Weartime requires the recording's timezone-free device-clock start time.")
+    rate = options["sampling_rate_hz"]
+    if (start_time + timedelta(seconds=(len(data) - 1) / rate)).date() != start_time.date():
+        raise ValueError("Run Weartime separately for each calendar day.")
+    report("process", "Running signal-based weartime detection…")
+    with warnings.catch_warnings(record=True) as captured:
+        warnings.simplefilter("always")
+        detector = WtdMegaritisSignal().detect(to_body_frame(data), sampling_rate_hz=rate)
+    intervals = detector.weartime_list_.copy()
+    midnight = start_time.replace(hour=0, minute=0, second=0, microsecond=0)
+    bounds = []
+    for boundary in detector.waking_hours:
+        clock = midnight.replace(
+            hour=boundary.hour, minute=boundary.minute, second=boundary.second, microsecond=boundary.microsecond
+        )
+        offset = Decimal(str((clock - start_time).total_seconds())) * Decimal(str(rate))
+        bounds.append(max(0, min(len(data), int(offset.to_integral_value(rounding=ROUND_CEILING)))))
+    waking_samples = (
+        (intervals["end"].clip(upper=bounds[1]) - intervals["start"].clip(lower=bounds[0])).clip(lower=0).sum()
+    )
+    intervals["start_time"] = [
+        (start_time + timedelta(seconds=int(sample) / rate)).isoformat() for sample in intervals["start"]
+    ]
+    intervals["end_time"] = [
+        (start_time + timedelta(seconds=int(sample) / rate)).isoformat() for sample in intervals["end"]
+    ]
+    intervals["duration_min"] = (intervals["end"] - intervals["start"]) / (60 * rate)
+    summary = pd.DataFrame(
+        [
+            {
+                "total_weartime_min": detector.total_weartime_min_,
+                "total_weartime_during_waking_min": float(waking_samples) / (60 * rate),
+                "nonwear_min": len(data) / (60 * rate) - detector.total_weartime_min_,
+                "recording_duration_min": len(data) / (60 * rate),
+                "wear_fraction": detector.total_weartime_samples_ / len(data),
+            }
+        ]
+    ).rename_axis("summary_id")
+    report("tables", "Preparing weartime summary, intervals and diagnostics…")
+    tables = {
+        "weartime_summary": table(summary),
+        "weartime": table(intervals),
+        "weartime_diagnostics": table(detector.diagnostics_["macro"].rename_axis("window_id")),
+    }
+    for value in tables.values():
+        if "data" in value:
+            value["rows"] = value.pop("data")
+    return {
+        "schema_version": 1,
+        "tables": tables,
+        "warnings": list(dict.fromkeys([*RUNTIME_NOTICES, *(str(item.message) for item in captured)])),
+        "provenance": {
+            "pipeline": "WtdMegaritisSignal",
+            "pipeline_type": "weartime",
+            "parameters": repr(detector.get_params(deep=False)),
+            "options": options,
+            "input_sha256": input_sha256 if input_sha256 is not None else hashlib.sha256(original_bytes).hexdigest(),
+            "input_format": input_format,
+            "source": source,
+            "samples": len(data),
+            "duration_s": len(data) / rate,
+            "elapsed_s": time.perf_counter() - started,
+            "versions": {name: version(name) for name in ["mobgap", "numpy", "pandas", "scipy", "tpcp"]},
+            "sensor_frame": "Mobilise-D aligned lower-back sensor converted to body frame; gyroscope in deg/s",
+            "first_sample_device_time": start_time.isoformat(),
+            "time_basis": "Naive device clock; no timezone or UTC offset inferred",
+            "waking_hours": [value.isoformat() for value in detector.waking_hours],
         },
     }

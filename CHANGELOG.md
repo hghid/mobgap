@@ -9,7 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Add an offline Electron application in `electron/` to run the preconfigured healthy and impaired Mobilise-D
-  pipelines on CSV and six-axis CWA recordings, with participant metadata, progress, result tables, and JSON export.
+  pipelines or the signal-based weartime detector on CSV and six-axis CWA recordings, with progress, daily and
+  combined result tables, and JSON/full-table CSV export. Weartime uses the actual device clock for partial-day
+  waking hours and requires at least 50 Hz; participant metadata is required only for Mobilise-D.
   Start with Inkspot Science branding, platform information, MobGap attribution, and direct CWA file selection.
   Provide portable ZIP builds and configure a Windows Squirrel installer with shortcut and uninstall handling.
   CWA input has no application file-size cap. Process midnight-aligned calendar days separately, including shorter

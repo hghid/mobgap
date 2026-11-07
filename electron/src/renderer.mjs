@@ -1,9 +1,12 @@
 import { renderTimeseries } from './timeseries-plot.mjs';
+import { combineDayResults } from './results.mjs';
 
 const $ = (id) => document.getElementById(id);
 const names = { aggregated: 'Aggregated', walking_bouts: 'Walking bouts', strides: 'Strides',
-  gait_sequences: 'Gait sequences', initial_contacts: 'Initial contacts' };
-const fields = ['sampling_rate_hz', 'acceleration_unit', 'cohort', 'height_m', 'sensor_height_m', 'measurement_condition', 'recording_start_time'];
+  gait_sequences: 'Gait sequences', initial_contacts: 'Initial contacts',
+  weartime_summary: 'Weartime summary', weartime: 'Wear intervals', weartime_diagnostics: 'Weartime diagnostics' };
+const participantFields = ['cohort', 'height_m', 'sensor_height_m', 'measurement_condition'];
+const fields = ['sampling_rate_hz', 'acceleration_unit', ...participantFields, 'recording_start_time', 'pipeline_type'];
 let worker;
 let ready = false;
 let busy = false;
@@ -11,6 +14,7 @@ let selected;
 let result;
 let dayResults = [];
 let dayPreviews = [];
+let combinedResult;
 let dayLabel = '';
 let requestId;
 let activeTable;
@@ -28,6 +32,18 @@ function controls() {
   $('start-cwa').disabled = busy;
   $('open-workspace').disabled = busy;
   $('show-start').disabled = busy;
+  $('pipeline_type').disabled = busy;
+  const weartime = $('pipeline_type').value === 'weartime';
+  for (const field of participantFields) $(field).disabled = busy || weartime;
+  $('sampling_rate_hz').min = weartime ? '50' : '0.01';
+  $('pipeline-hint').textContent = weartime ? 'Signal-based wear detection · ≥50 Hz · no participant details required' :
+    'HA / COPD / CHF → healthy · MS / PD / PFF → impaired';
+  $('metadata-hint').textContent = weartime ?
+    'Weartime uses the default WtdMegaritisSignal detector on all six IMU channels at ≥50 Hz. Check sampling rate and units; participant details are not required.' :
+    selected?.example ? 'Metadata loaded from the matching repository example. You can review it before running.' :
+    selected?.format === 'cwa' ?
+      'CWA is decoded locally with cubic resampling (default 100 Hz), acceleration in g and gyroscope in °/s. Enter participant measurements and condition; mounting must match the Mobilise-D frame.' :
+      'Enter recording units, sample rate and participant measurements. The app does not infer these from signal values.';
   $('choose').disabled = busy;
   $('choose-cwa').disabled = busy;
   $('run').disabled = !ready || busy || !selected;
@@ -85,6 +101,7 @@ function initialize() {
     } else if (data.type === 'progress') {
       status(data.message, true);
       $('stage-note').textContent = data.stage === 'process' ?
+        $('pipeline_type').value === 'weartime' ? 'Detecting wear intervals from accelerometer and gyroscope signals. Progress is indeterminate.' :
         'Computing gait sequences, contacts, strides and walking bouts. Duration depends on recording length; the progress bar is indeterminate.' :
         'Progress shows completed stages, rather than an estimated percentage.';
     } else if (data.type === 'day-start') {
@@ -112,18 +129,34 @@ function initialize() {
     } else if (data.type === 'complete') {
       busy = false;
       stopTimer();
+      combinedResult = combineDayResults(dayResults);
+      const option = document.createElement('option');
+      option.value = 'combined'; option.textContent = 'Combined'; $('day-select').append(option);
       status('Processing complete.');
-      $('stage-note').textContent = `${data.total} calendar day${data.total === 1 ? '' : 's'} finished${data.failed ? ` · ${data.failed} failed` : ''} · ${result.provenance.pipeline} · ${result.provenance.samples.toLocaleString()} samples in selected day`;
+      describeSelection();
       controls();
     }
   };
 }
 
+function describeSelection() {
+  if (!result || busy) return;
+  const failed = dayResults.filter((day) => day.status === 'failed').length;
+  const scope = result.provenance.view === 'combined' ? 'across combined days' : `in ${result.provenance.calendar_day.date}`;
+  $('stage-note').textContent = `${dayResults.length} calendar day${dayResults.length === 1 ? '' : 's'} finished${failed ? ` · ${failed} failed` : ''} · ${result.provenance.pipeline} · ${result.provenance.samples.toLocaleString()} samples ${scope}`;
+}
+
 function renderResults() {
   $('results').hidden = false;
-  $('result-summary').textContent = `${result.tables.walking_bouts.rows.length} walking bouts · ${result.tables.strides.rows.length} strides · ${result.provenance.duration_s.toFixed(1)} s recording`;
+  const combined = result.provenance.view === 'combined';
+  const count = result.provenance.pipeline_type === 'weartime' ? `${result.tables.weartime.rows.length} wear intervals` :
+    `${result.tables.walking_bouts.rows.length} walking bouts · ${result.tables.strides.rows.length} strides`;
+  $('result-summary').textContent = `${combined ? `${result.provenance.day_runs.length} days combined · ` : ''}${count} · ${result.provenance.duration_s.toFixed(1)} s recording`;
+  $('table-note').textContent = combined ? 'Rows are joined by day, with original day-relative indices. Daily statistics are not recalculated. Failed or skipped days remain listed in processing notices and JSON metadata.' :
+    '— means unavailable or not applicable. Intervals use day-relative sample indices; end is exclusive.';
   $('tabs').replaceChildren();
-  const views = result.provenance.input_format === 'cwa' ? { ...names, timeseries: 'Timeseries' } : names;
+  const views = Object.fromEntries(Object.keys(result.tables).map((key) => [key, names[key] ?? key]));
+  if (!combined && result.provenance.input_format === 'cwa') views.timeseries = 'Timeseries';
   for (const [key, label] of Object.entries(views)) {
     const button = document.createElement('button');
     button.id = `tab-${key}`;
@@ -143,7 +176,8 @@ function renderResults() {
     });
     $('tabs').append(button);
   }
-  if (!Object.hasOwn(views, activeTable)) activeTable = result.tables.aggregated.rows.length ? 'aggregated' : 'gait_sequences';
+  if (!Object.hasOwn(views, activeTable)) activeTable = result.tables.weartime_summary ? 'weartime_summary' :
+    result.tables.aggregated.rows.length ? 'aggregated' : 'gait_sequences';
   page = 0;
   renderTable();
   $('warnings').hidden = !result.warnings.length;
@@ -151,6 +185,7 @@ function renderResults() {
   $('warning-list').replaceChildren(...result.warnings.map((message) => {
     const item = document.createElement('li'); item.textContent = message; return item;
   }));
+  describeSelection();
 }
 
 function renderTable() {
@@ -159,6 +194,7 @@ function renderTable() {
     tab.tabIndex = tab.id === `tab-${activeTable}` ? 0 : -1;
   }
   const plotting = activeTable === 'timeseries';
+  $('save-csv').disabled = plotting || !result.tables[activeTable]?.columns.length;
   $('timeseries-panel').hidden = !plotting;
   $('pagination').hidden = plotting;
   $('table-note').hidden = plotting;
@@ -190,7 +226,7 @@ function renderTable() {
     return tr;
   }));
   $('empty').hidden = table.rows.length > 0;
-  $('empty').textContent = 'No rows for this result. A completed run can contain no qualifying walking bouts.';
+  $('empty').textContent = 'No rows for this result. Check processing notices for failed or skipped days.';
   $('table-panel').hidden = !table.rows.length;
   $('row-count').textContent = table.rows.length ?
     `${page * PAGE_SIZE + 1}–${Math.min((page + 1) * PAGE_SIZE, table.rows.length)} of ${table.rows.length.toLocaleString()} rows` : '0 rows';
@@ -216,6 +252,7 @@ function useRecording(chosen) {
     result = null;
     dayResults = [];
     dayPreviews = [];
+    combinedResult = undefined;
     activeTable = undefined;
     $('plot-group').value = 'accelerometer';
     $('day-select').replaceChildren();
@@ -223,17 +260,12 @@ function useRecording(chosen) {
     $('error').hidden = true;
     $('filename').textContent = chosen.name;
     $('example-label').textContent = chosen.example ? `Example: ${chosen.example.label}` : 'Custom recording';
-    for (const name of fields) $(name).value = chosen.example?.[name] ?? '';
+    for (const name of fields.filter((field) => field !== 'pipeline_type')) $(name).value = chosen.example?.[name] ?? '';
     $('sampling-rate-label').textContent = format === 'cwa' ? 'Resample CWA to (Hz)' : 'Sampling rate (Hz)';
     if (format === 'cwa') {
       $('sampling_rate_hz').value = '100';
       $('acceleration_unit').value = 'g';
     }
-    $('metadata-hint').textContent = chosen.example ?
-      'Metadata loaded from the matching repository example. You can review it before running.' :
-      format === 'cwa' ?
-        'CWA is decoded locally and resampled with cubic interpolation at the rate shown (default 100 Hz). Acceleration is decoded in g and gyroscope in °/s. Enter participant measurements and condition; sensor mounting must match the Mobilise-D frame.' :
-        'Enter recording units, sample rate and participant measurements. The app does not infer these from signal values.';
     if (ready) status('Recording selected. Check the metadata and run the pipeline.');
     controls();
 }
@@ -264,19 +296,22 @@ $('cwa-file').addEventListener('change', () => {
   $('cwa-file').value = '';
 });
 $('day-select').addEventListener('change', () => {
-  result = dayResults[Number($('day-select').value)];
+  result = $('day-select').value === 'combined' ? combinedResult : dayResults[Number($('day-select').value)];
   renderResults();
 });
+$('pipeline_type').addEventListener('change', controls);
 $('plot-group').addEventListener('change', renderTable);
 
 $('settings').addEventListener('submit', (event) => {
   event.preventDefault();
   if (!ready || busy || !selected || !$('settings').reportValidity()) return;
   const options = Object.fromEntries(fields.map((name) => [name, $(name).type === 'number' ? Number($(name).value) : $(name).value]));
-  if (options.sensor_height_m > options.height_m) { fail('Sensor height cannot exceed participant height.'); return; }
+  if (options.pipeline_type === 'mobilised' && options.sensor_height_m > options.height_m) { fail('Sensor height cannot exceed participant height.'); return; }
+  if (options.pipeline_type === 'weartime') for (const field of participantFields) delete options[field];
   result = null;
   dayResults = [];
   dayPreviews = [];
+  combinedResult = undefined;
   activeTable = undefined;
   $('day-select').replaceChildren();
   $('results').hidden = true;
@@ -311,6 +346,16 @@ $('save').addEventListener('click', async () => {
     if (await window.mobgap.saveResults(JSON.stringify(result, null, 2))) status('Results saved.');
   } catch (error) { fail(error.message); }
   finally { $('save').disabled = false; }
+});
+$('save-csv').addEventListener('click', async () => {
+  const table = result?.tables[activeTable];
+  if (!table?.columns.length) return;
+  $('save-csv').disabled = true;
+  try {
+    if (await window.mobgap.saveTableCsv({ table, name: activeTable,
+      day: result.provenance.view === 'combined' ? 'combined' : result.provenance.calendar_day.date })) status('CSV table saved.');
+  } catch (error) { fail(error.message); }
+  finally { $('save-csv').disabled = activeTable === 'timeseries' || !result?.tables[activeTable]?.columns.length; }
 });
 setInterval(() => { if (started !== null && started !== undefined) $('elapsed').textContent = `${Math.floor((performance.now() - started) / 1000)} s elapsed`; }, 1000);
 initialize();

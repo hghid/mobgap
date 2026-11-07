@@ -22,6 +22,7 @@ await py.runPythonAsync(await readFile(path.join(root, 'python/adapter.py'), 'ut
 py.runPython('validate_runtime()');
 const examples = JSON.parse(await readFile(path.join(runtime, 'example-metadata.json')));
 const compare = process.argv.includes('--compare');
+const weartime = process.argv.includes('--weartime');
 const paths = process.argv.slice(2).filter((value) => !value.startsWith('--'));
 if (process.argv.includes('--all')) {
   for await (const file of glob('*/*/*.csv', { cwd: path.join(root, '../example_data/data_csv') })) paths.push(file);
@@ -30,14 +31,16 @@ if (process.argv.includes('--all')) {
 if (!paths.length) paths.push('HA/001/TimeMeasure1_Test11_Trial1.csv', 'MS/001/TimeMeasure1_Test11_Trial1.csv');
 for (const file of paths) {
   const bytes = await readFile(path.join(root, '../example_data/data_csv', file));
-  const options = examples[createHash('sha256').update(bytes).digest('hex')];
+  const exampleOptions = examples[createHash('sha256').update(bytes).digest('hex')];
+  const options = weartime ? { pipeline_type: 'weartime', sampling_rate_hz: 100, acceleration_unit: 'g',
+    recording_start_time: '2024-01-02T06:59:30' } : exampleOptions;
   py.FS.writeFile('/recording.csv', bytes);
   py.globals.set('options_json', JSON.stringify(options));
   const result = JSON.parse(await py.runPythonAsync(
     'json.dumps(process_csv(open("/recording.csv", "rb").read(), json.loads(options_json)), allow_nan=False)',
   ));
-  if (file.includes('Test11')) assert.ok(result.tables.strides.rows.length > 0, `Expected strides for ${file}`);
-  console.log(`${file}: ${result.provenance.pipeline}, ${result.tables.walking_bouts.rows.length} bouts, ${result.tables.strides.rows.length} strides, ${result.provenance.elapsed_s.toFixed(2)}s`);
+  if (!weartime && file.includes('Test11')) assert.ok(result.tables.strides.rows.length > 0, `Expected strides for ${file}`);
+  console.log(`${file}: ${result.provenance.pipeline}, ${Object.keys(result.tables).length} tables, ${result.provenance.elapsed_s.toFixed(2)}s`);
   if (compare) {
     const nativePython = process.env.MOBGAP_PYTHON || path.join(root, '..', '.venv',
       process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python');
@@ -63,6 +66,6 @@ for (const file of paths) {
         }
       }
     }
-    console.log('  All five result tables match native CPython (rtol=1e-7, atol=1e-8; exact indices and labels).');
+    console.log('  All result tables match native CPython (rtol=1e-7, atol=1e-8; exact indices and labels).');
   }
 }

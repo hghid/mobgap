@@ -3,6 +3,7 @@
 A small Electron application running the repository's Python code in Pyodide, inside a Web Worker.
 It uses `MobilisedPipelineUniversal` with the default healthy and impaired pipelines from
 [`examples/pipeline/_03_preconfigured_mobilised_pipelines.py`](../examples/pipeline/_03_preconfigured_mobilised_pipelines.py).
+It also runs the default `WtdMegaritisSignal` weartime detector from `mobgap.weartime`.
 The installed application contains Python, WebAssembly, the MobGap wheel, models, scientific dependencies,
 and the Rust/WebAssembly CWA reader.
 It needs no system Python or network connection to process a recording.
@@ -84,6 +85,7 @@ npm test
 npm run test:adapter
 npm run test:cwa
 npm run test:parity
+npm run test:weartime
 npm run test:e2e
 npm run make
 npm run test:packaged
@@ -111,13 +113,16 @@ destinations are exposed through a validated main-process operation; processing 
 requests inside the application.
 
 1. Select **Analyse .CWA File** to enter the workspace and immediately open the CWA file chooser. This works
-   while the local runtime starts; processing waits for runtime readiness and valid participant metadata.
+   while the local runtime starts; processing waits for runtime readiness and valid analysis settings.
    Canceling the chooser leaves the workspace available. **Open analysis workspace** enters without a chooser,
    and **Back to start** returns to the start screen while preserving the selected recording and completed results.
    Within the workspace, choose a recording with **Choose CSV…** or **Choose CWA…**. For CSV, try
    [`HA/001/TimeMeasure1_Test11_Trial1.csv`](../example_data/data_csv/HA/001/TimeMeasure1_Test11_Trial1.csv)
    or [`MS/001/TimeMeasure1_Test11_Trial1.csv`](../example_data/data_csv/MS/001/TimeMeasure1_Test11_Trial1.csv).
-2. Check the recording and participant settings. Exact matches to any of the nine repository examples are
+2. Choose **Pipeline type**: **Mobilise-D** for gait analysis or **Weartime** for signal-based wear detection.
+   Weartime requires all six IMU channels and at least 50 Hz. Participant metadata fields are disabled and unused
+   for Weartime. Both analysis types require the sample rate and units, and CSV requires a device-clock start time.
+   For Mobilise-D, check the recording and participant settings. Exact matches to any of the nine repository examples are
    recognised by SHA-256 and use their companion participant metadata, 100 Hz sampling, acceleration in g,
    and laboratory measurement conditions. Renaming a file does not change recognition. A different file with
    the same name does not inherit example metadata. For CWA, enter cohort, participant height, sensor height,
@@ -126,21 +131,37 @@ requests inside the application.
    the decoder. The CWA header's configured sample rate is retained separately in the exported provenance.
    For CSV, also enter the recording's actual start date/time on the device clock. CSV samples have no wall-clock
    timestamps, so the app cannot infer their midnight boundaries, including for the bundled examples.
-3. Select **Run pipeline**. HA, COPD, and CHF use `MobilisedPipelineHealthy`; MS, PD, and PFF use
+3. Select **Run**. For Mobilise-D, HA, COPD, and CHF use `MobilisedPipelineHealthy`; MS, PD, and PFF use
    `MobilisedPipelineImpaired`. The pipeline uses its preconfigured algorithms and thresholds.
+   Weartime runs a fresh `WtdMegaritisSignal` on each day after converting acceleration to m/s² and sensor axes
+   to the body frame. It uses the detector's default parameters, including 60-minute macro windows and 5-second
+   micro windows. These defaults were tuned on one dataset; see the detector's documentation for its scientific scope.
 4. The app splits at **midnight on the device clock**, with shorter first and last batches. Every interior batch
    runs midnight to midnight. Use **Calendar day** to select a completed day's results, then view aggregated
    parameters, walking bouts, strides, gait sequences, and initial contacts using the tabs.
    Tables paginate at 100 rows. Displayed floats are rounded to six decimal places; hover for the exported
    value. Missing values display as `—`.
+   Weartime provides **Weartime summary**, **Wear intervals**, and **Weartime diagnostics** tables. The summary
+   includes total wear minutes, wear minutes during 07:00–22:00, non-wear minutes, recording duration, and wear fraction.
+   Interval timestamps use the naive device clock. Waking-hour intersections use the actual first-sample time,
+   including for partial days; sample zero is not assumed to be midnight. No timezone or DST offset is inferred.
    For CWA, the **Timeseries** tab shows the selected day's X/Y/Z traces. Use **Sensor values** to switch
    between accelerometer (g) and gyroscope (°/s). The plot uses decoded samples at the selected resampling
    rate, before pipeline filtering or body-frame conversion. Min/max subsampling preserves peaks with at most
    2,000 points per axis; the caption shows the decoded sample count and device-clock range.
    Switching calendar days updates the plot while keeping the chosen sensor group.
+   Once all days finish, **Combined** appears in **Calendar day**. It joins every result table with `day` as its
+   first column, preserving day-relative interval indices and repeated daily identifiers. It does not recompute
+   daily aggregate statistics or join scientific pipeline state across days. Failed/skipped days remain explicit
+   in notices and per-day JSON provenance. Signal plots remain available only for individual days.
 5. **Save results…**, beside **Calendar day**, exports the selected day's JSON, with a date-based filename, containing all table rows,
    day boundaries, day-relative sample indices, processing notices, settings, original input hash, pipeline parameters,
    and package/runtime versions. It does not export raw recordings or plot previews. Export other days using the day selector.
+   Selecting **Combined** exports the joined tables with each day's provenance and status.
+6. **Export table CSV…** exports every row of the active result table, including rows outside the visible page.
+   It works for individual days and Combined. CSV uses UTF-8 with a BOM for spreadsheet compatibility, quoted
+   fields, full stored numeric precision, and blank fields for null values. Header-only tables can be exported;
+   the button is disabled on signal plots and tables without columns. Individual JSON/CSV exports have a 32 MiB limit.
 
 Progress reports initialization, CWA packet decoding, validation, pipeline execution, and table preparation.
 CWA decoding reports the number of output samples for the current day. The bar is indeterminate
@@ -228,6 +249,7 @@ For a deliberate runtime upgrade, update the pinned dependency, install it, reso
 npm run runtime:lock
 npm run test:runtime
 npm run test:parity
+npm run test:weartime
 npm run test:cwa
 npm run test:e2e
 npm run make
@@ -255,6 +277,7 @@ npm test
 npm run test:adapter
 npm run test:runtime
 npm run test:parity
+npm run test:weartime
 npm run test:cwa
 npm run test:e2e
 npm run make
@@ -266,6 +289,11 @@ installed requirement metadata, and runs the long healthy and MS examples. `test
 output tables on all nine CSVs against native CPython: indices, interval boundaries, and labels match exactly;
 numeric values use `rtol=1e-7` and `atol=1e-8`. Set `MOBGAP_PYTHON` to use another native environment instead
 of the repository's `.venv`.
+`test:weartime` compares all three weartime tables on the same nine recordings against native Python, using
+the same tolerances and exact indices/timestamps. Adapter tests compare partial-day waking hours against the
+native detector's localized-clock property. The actual Electron worker also compares both midnight CWA batches
+with independent native weartime results. The weartime modules use standard-library typing features available
+on every supported Python version, with no extra runtime dependency.
 
 `test:cwa` uses an isolated native 0.5.0 reader in `.cache/cwa-native` as the oracle. Its scientific dependencies
 come from the existing native comparison environment; that test-only install does not alter MobGap's native
@@ -280,7 +308,8 @@ windows. CSV tests cover exact midnight sample assignment, leap-day windows, com
 
 Playwright launches the actual Electron app and checks the start screen and bundled logo, system-browser links,
 the start button's CWA chooser and cancellation, file selection, metadata recognition, both pipelines,
-tables, CWA decoding, midnight splitting, per-day selection/export and signal plots, malformed input, cancellation, and recovery. Tests generate their CWA fixtures
+tables, both analysis types, CWA decoding, midnight splitting, combined views, full-table CSV export,
+per-day selection/export and signal plots, malformed input, cancellation, and recovery. Tests generate their CWA fixtures
 using the native test environment. `test:packaged` repeats this against the
 ASAR-packaged executable. Tests save screenshots and failure traces in `test-results/`. Linux CI uses Xvfb.
 
@@ -298,6 +327,7 @@ release checks before support is advertised; the workflow has not been run from 
 - `src/windows-install.cjs`: Windows installer lifecycle and shortcut handling.
 - `src/renderer.mjs`: form, worker lifecycle, progress, paginated tables, and day selection.
 - `src/timeseries.mjs` and `src/timeseries-plot.mjs`: bounded per-day CWA signal previews and SVG plotting.
+- `src/results.mjs`: joins daily result tables while retaining original interval indices and per-day provenance.
 - `src/worker.mjs`: local runtime initialization and fixed processing entry point.
 - `src/cwa-import.mjs`: bounded packet decoding with the bundled Rust reader and channel/timestamp validation.
 - `python/adapter.py`: recording validation, unit conversion, dataset construction, and result serialization.

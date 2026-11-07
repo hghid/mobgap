@@ -109,6 +109,14 @@ for day in days:
     timestamps = data.index.as_unit("us").asi8
     result = process_cwa(midnight_source.read_bytes(), channels, timestamps, metadata, options)
     (output / f"day-{day['date']}-results.json").write_text(json.dumps(result, allow_nan=False))
+    wear_result = process_cwa(
+        midnight_source.read_bytes(),
+        channels,
+        timestamps,
+        metadata,
+        {"pipeline_type": "weartime", "sampling_rate_hz": 100, "acceleration_unit": "g"},
+    )
+    (output / f"day-{day['date']}-weartime-results.json").write_text(json.dumps(wear_result, allow_nan=False))
     day["samples"] = len(data)
     day["timestamps_sha256"] = hashlib.sha256(timestamps.astype("<i8").tobytes()).hexdigest()
 (output / "native.json").write_text(json.dumps(manifest, allow_nan=False))

@@ -4,11 +4,10 @@ from __future__ import annotations
 
 import logging
 from importlib import import_module
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Self
 
 import numpy as np
 from tpcp import OptimizableParameter, OptimizablePipeline, make_action_safe, make_optimize_safe
-from typing_extensions import Self
 
 from mobgap.data.base import BaseGaitDataset
 from mobgap.utils.conversions import to_body_frame

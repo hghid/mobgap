@@ -107,11 +107,11 @@ test('offline Electron import, both pipelines, tables, export, cancellation and 
     await expect(page.locator('#sampling_rate_hz')).toHaveValue('100');
     await expect(page.locator('#results')).toBeHidden();
     await expect(page.locator('#cohort')).toHaveValue('');
-    await page.getByRole('button', { name: 'Run pipeline', exact: true }).click();
+    await page.getByRole('button', { name: 'Run', exact: true }).click();
     await expect(page.locator('#cohort')).toBeFocused();
     await expect(page.locator('#results')).toBeHidden();
     await participant(page);
-    await page.getByRole('button', { name: 'Run pipeline', exact: true }).click();
+    await page.getByRole('button', { name: 'Run', exact: true }).click();
     await expect(page.locator('#status')).toHaveText('Processing complete.', { timeout: 60_000 });
     await page.getByRole('tab', { name: 'Strides (47)', exact: true }).click();
     await expect(page.locator('#result-table tbody tr')).toHaveCount(47);
@@ -126,7 +126,7 @@ test('offline Electron import, both pipelines, tables, export, cancellation and 
     ]) {
       await choose(app, page, example(file));
       await expect(page.locator('#sampling_rate_hz')).toHaveValue('100');
-      await page.getByRole('button', { name: 'Run pipeline', exact: true }).click();
+      await page.getByRole('button', { name: 'Run', exact: true }).click();
       await expect(page.locator('#status')).toHaveText('Processing complete.', { timeout: 60_000 });
       await expect(page.locator('#stage-note')).toContainText(pipeline);
       await expect(page.getByRole('tab', { name: 'Timeseries', exact: true })).toHaveCount(0);
@@ -155,7 +155,7 @@ test('offline Electron import, both pipelines, tables, export, cancellation and 
       await expect(page.locator('#sampling_rate_hz')).toHaveValue('100');
       await expect(page.locator('#acceleration_unit')).toBeDisabled();
       await participant(page, cohort);
-      await page.getByRole('button', { name: 'Run pipeline', exact: true }).click();
+      await page.getByRole('button', { name: 'Run', exact: true }).click();
       await expect(page.locator('#status')).toHaveText('Processing complete.', { timeout: 60_000 });
       await page.getByRole('tab', { name: `Strides (${count})`, exact: true }).click();
       await expect(page.locator('#result-table tbody tr')).toHaveCount(count);
@@ -188,7 +188,7 @@ test('offline Electron import, both pipelines, tables, export, cancellation and 
     await choose(app, page, longCase.path, 'cwa');
     await participant(page);
     await page.locator('#sampling_rate_hz').fill(String(longCase.rate));
-    await page.getByRole('button', { name: 'Run pipeline', exact: true }).click();
+    await page.getByRole('button', { name: 'Run', exact: true }).click();
     await expect(page.locator('#status')).toHaveText('Processing complete.', { timeout: 60_000 });
     await page.getByRole('button', { name: 'Save results…' }).click();
     await expect(page.locator('#status')).toHaveText('Results saved.');
@@ -196,18 +196,34 @@ test('offline Electron import, both pipelines, tables, export, cancellation and 
     expect(longSaved.provenance.samples).toBe(longCase.samples);
     const nativeLong = JSON.parse(await readFile(path.join(root, `.cache/cwa-tests/${longCase.name}-results.json`)));
     expect(longSaved.provenance.source.last_sample_device_time_us).toBe(nativeLong.provenance.source.last_sample_device_time_us);
+    const longContacts = longSaved.tables.initial_contacts.rows.length;
+    expect(longContacts).toBeGreaterThan(100);
+    await page.getByRole('tab', { name: `Initial contacts (${longContacts})`, exact: true }).click();
+    await expect(page.locator('#result-table tbody tr')).toHaveCount(100);
+    const longCsvOutput = testInfo.outputPath('all-contact-pages.csv');
+    await app.evaluate(({ dialog }, filename) => {
+      dialog.showSaveDialog = async () => ({ canceled: false, filePath: filename });
+    }, longCsvOutput);
+    await page.getByRole('button', { name: 'Export table CSV…', exact: true }).click();
+    await expect(page.locator('#status')).toHaveText('CSV table saved.');
+    expect((await readFile(longCsvOutput, 'utf8')).split('\r\n').filter(Boolean)).toHaveLength(longContacts + 1);
+    await app.evaluate(({ dialog }, filename) => {
+      dialog.showSaveDialog = async () => ({ canceled: false, filePath: filename });
+    }, output);
 
     // Each midnight-aligned partial day has its own native-equivalent tables and export.
     await choose(app, page, nativeCases.daily.path, 'cwa');
     await participant(page);
-    await page.getByRole('button', { name: 'Run pipeline', exact: true }).click();
+    await page.getByRole('button', { name: 'Run', exact: true }).click();
     await expect(page.locator('#status')).toHaveText('Processing complete.', { timeout: 60_000 });
-    await expect(page.locator('#day-select option')).toHaveCount(2);
-    const selectorBox = await page.locator('#day-select').boundingBox();
-    const saveBox = await page.locator('#save').boundingBox();
-    expect(Math.abs(selectorBox.y - saveBox.y)).toBeLessThan(2);
+    await expect(page.locator('#day-select option')).toHaveCount(3);
+    const [selectorBox, saveBox] = await page.evaluate(() => ['day-select', 'save']
+      .map((id) => document.getElementById(id).getBoundingClientRect().toJSON()));
+    await page.screenshot({ path: testInfo.outputPath('results-toolbar.png'), fullPage: true });
+    expect(Math.abs(selectorBox.y - saveBox.y), JSON.stringify({ selectorBox, saveBox })).toBeLessThan(2);
     expect(saveBox.x).toBeGreaterThan(selectorBox.x + selectorBox.width);
     await page.getByRole('tab', { name: 'Timeseries', exact: true }).click();
+    await expect(page.locator('#save-csv')).toBeDisabled();
     await expect(page.locator('#plot-group')).toHaveValue('accelerometer');
     await expect(page.locator('#timeseries-plot')).toHaveAttribute('aria-label', /Accelerometer \(g\)/);
     await page.locator('#plot-group').selectOption('gyroscope');
@@ -243,11 +259,45 @@ test('offline Electron import, both pipelines, tables, export, cancellation and 
     await expect(page.locator('#timeseries-panel')).toBeHidden();
     await expect(page.locator('#result-table tbody tr')).toHaveCount(40);
 
+    // Combined is available after completion; table exports include every page and keep the day first.
+    await page.locator('#day-select').selectOption('combined');
+    await expect(page.locator('#result-table thead th').first()).toHaveText('day');
+    await expect(page.getByRole('tab', { name: 'Timeseries', exact: true })).toHaveCount(0);
+    await page.getByRole('button', { name: 'Save results…' }).click();
+    await expect(page.locator('#status')).toHaveText('Results saved.');
+    const combined = JSON.parse(await readFile(output));
+    expect(combined.provenance.day_runs).toHaveLength(2);
+    expect(combined.provenance.view).toBe('combined');
+    expect(combined.tables.strides.columns[0]).toBe('day');
+    expect([...new Set(combined.tables.strides.rows.map((row) => row[0]))]).toEqual(['2024-01-02', '2024-01-03']);
+    const contacts = combined.tables.initial_contacts.rows.length;
+    await page.getByRole('tab', { name: `Initial contacts (${contacts})`, exact: true }).click();
+    await expect(page.locator('#result-table tbody tr')).toHaveCount(Math.min(100, contacts));
+    const csvOutput = testInfo.outputPath('combined-contacts.csv');
+    await app.evaluate(({ dialog }, filename) => {
+      dialog.showSaveDialog = async (_window, options) => {
+        globalThis.csvDefaultPath = options.defaultPath;
+        return { canceled: false, filePath: filename };
+      };
+    }, csvOutput);
+    await page.getByRole('button', { name: 'Export table CSV…', exact: true }).click();
+    await expect(page.locator('#status')).toHaveText('CSV table saved.');
+    const csvTable = await readFile(csvOutput, 'utf8');
+    expect(csvTable.replace(/^\uFEFF/, '').split('\r\n').filter(Boolean)).toHaveLength(contacts + 1);
+    expect(csvTable).toContain('"day",');
+    expect(csvTable).toContain('"2024-01-02",');
+    expect(csvTable).toContain('"2024-01-03",');
+    expect(await app.evaluate(() => globalThis.csvDefaultPath)).toBe('mobgap-combined-initial_contacts.csv');
+    await page.screenshot({ path: testInfo.outputPath('combined-results.png'), fullPage: true });
+    await app.evaluate(({ dialog }, filename) => {
+      dialog.showSaveDialog = async () => ({ canceled: false, filePath: filename });
+    }, output);
+
     await choose(app, page, example('HA/001/TimeMeasure1_Test11_Trial1.csv'));
     await page.locator('#recording_start_time').fill('2024-01-02T23:59:30');
-    await page.getByRole('button', { name: 'Run pipeline', exact: true }).click();
+    await page.getByRole('button', { name: 'Run', exact: true }).click();
     await expect(page.locator('#status')).toHaveText('Processing complete.', { timeout: 60_000 });
-    await expect(page.locator('#day-select option')).toHaveCount(2);
+    await expect(page.locator('#day-select option')).toHaveCount(3);
     await page.locator('#day-select').selectOption('0');
     await page.getByRole('button', { name: 'Save results…' }).click();
     await expect(page.locator('#status')).toHaveText('Results saved.');
@@ -258,7 +308,7 @@ test('offline Electron import, both pipelines, tables, export, cancellation and 
 
     await choose(app, page, nativeCases.daily.failed_first_path, 'cwa');
     await participant(page);
-    await page.getByRole('button', { name: 'Run pipeline', exact: true }).click();
+    await page.getByRole('button', { name: 'Run', exact: true }).click();
     await expect(page.locator('#status')).toHaveText('Processing complete.', { timeout: 60_000 });
     await expect(page.locator('#day-select option').first()).toContainText('(failed)');
     await page.getByRole('tab', { name: 'Timeseries', exact: true }).click();
@@ -272,18 +322,21 @@ test('offline Electron import, both pipelines, tables, export, cancellation and 
     await expect(page.locator('#timeseries-plot polyline')).toHaveCount(3);
     await page.getByRole('tab', { name: 'Strides (40)', exact: true }).click();
     await expect(page.locator('#result-table tbody tr')).toHaveCount(40);
+    await page.locator('#day-select').selectOption('combined');
+    await expect(page.locator('#warning-list')).toContainText('2024-01-02:');
+    await expect(page.locator('#result-table tbody tr')).toHaveCount(40);
 
     // A real accelerometer-only CWA must not acquire invented gyroscope channels.
     await choose(app, page, path.join(root, '../example_data/data/ax6/example-610-steps.cwa'), 'cwa');
     await participant(page);
-    await page.getByRole('button', { name: 'Run pipeline', exact: true }).click();
+    await page.getByRole('button', { name: 'Run', exact: true }).click();
     await expect(page.locator('#error-message')).toContainText('gyroscope');
     await expect(page.locator('#run')).toBeEnabled();
     const malformed = testInfo.outputPath('truncated spaced ü.cwa');
     await writeFile(malformed, (await readFile(path.join(root, '.cache/cwa-tests/HA-six-axis.cwa'))).subarray(0, 1100));
     await choose(app, page, malformed, 'cwa');
     await participant(page);
-    await page.getByRole('button', { name: 'Run pipeline', exact: true }).click();
+    await page.getByRole('button', { name: 'Run', exact: true }).click();
     await expect(page.locator('#error')).toBeVisible();
     await expect(page.locator('#run')).toBeEnabled();
 
@@ -305,16 +358,16 @@ test('offline Electron import, both pipelines, tables, export, cancellation and 
     await page.locator('#height_m').fill('1.59');
     await page.locator('#sensor_height_m').fill('0.964');
     await page.locator('#measurement_condition').selectOption('laboratory');
-    await page.getByRole('button', { name: 'Run pipeline', exact: true }).click();
+    await page.getByRole('button', { name: 'Run', exact: true }).click();
     await expect(page.locator('#error-message')).toContainText('must contain numeric values');
     await expect(page.locator('#results')).toBeHidden();
 
     // Terminating the worker must recover a usable interpreter and preserve the chosen recording.
     await choose(app, page, example('HA/001/TimeMeasure1_Test11_Trial1.csv'));
-    await page.getByRole('button', { name: 'Run pipeline', exact: true }).click();
+    await page.getByRole('button', { name: 'Run', exact: true }).click();
     await page.getByRole('button', { name: 'Cancel', exact: true }).click();
     await expect(page.locator('#status')).toHaveText('Ready to process a recording.', { timeout: 120_000 });
-    await page.getByRole('button', { name: 'Run pipeline', exact: true }).click();
+    await page.getByRole('button', { name: 'Run', exact: true }).click();
     await expect(page.locator('#status')).toHaveText('Processing complete.', { timeout: 60_000 });
     // Cancelling a CWA job recreates both runtimes and permits another CWA run.
     await choose(app, page, path.join(root, '.cache/cwa-tests/HA-six-axis.cwa'), 'cwa');
@@ -324,9 +377,50 @@ test('offline Electron import, both pipelines, tables, export, cancellation and 
       document.getElementById('cancel').click();
     });
     await expect(page.locator('#status')).toHaveText('Ready to process a recording.', { timeout: 120_000 });
-    await page.getByRole('button', { name: 'Run pipeline', exact: true }).click();
+    await page.getByRole('button', { name: 'Run', exact: true }).click();
     await expect(page.locator('#status')).toHaveText('Processing complete.', { timeout: 60_000 });
     await page.screenshot({ path: testInfo.outputPath('mobgap.png'), fullPage: true });
+
+    // Weartime runs independently of participant metadata and agrees with the native CWA daily oracle.
+    await choose(app, page, nativeCases.daily.path, 'cwa');
+    await page.locator('#pipeline_type').selectOption('weartime');
+    await expect(page.locator('#height_m')).toBeDisabled();
+    await expect(page.locator('#cohort')).toBeDisabled();
+    await page.locator('#sampling_rate_hz').fill('49');
+    await page.getByRole('button', { name: 'Run', exact: true }).click();
+    await expect(page.locator('#sampling_rate_hz')).toBeFocused();
+    await page.locator('#sampling_rate_hz').fill('100');
+    await page.getByRole('button', { name: 'Run', exact: true }).click();
+    await expect(page.locator('#status')).toHaveText('Processing complete.', { timeout: 60_000 });
+    await expect(page.locator('#stage-note')).toContainText('WtdMegaritisSignal');
+    await expect(page.getByRole('tab', { name: 'Weartime summary (1)', exact: true })).toHaveAttribute('aria-selected', 'true');
+    for (const [index, day] of nativeCases.daily.days.entries()) {
+      await page.locator('#day-select').selectOption(String(index));
+      await page.getByRole('button', { name: 'Save results…' }).click();
+      await expect(page.locator('#status')).toHaveText('Results saved.');
+      const actual = JSON.parse(await readFile(output));
+      const expected = JSON.parse(await readFile(path.join(root, `.cache/cwa-tests/day-${day.date}-weartime-results.json`)));
+      for (const [name, table] of Object.entries(expected.tables)) {
+        expect(actual.tables[name].columns).toEqual(table.columns);
+        expect(actual.tables[name].rows).toHaveLength(table.rows.length);
+        for (const [i, row] of table.rows.entries()) for (const [j, value] of row.entries()) {
+          if (typeof value === 'number') expect(actual.tables[name].rows[i][j]).toBeCloseTo(value, 6);
+          else expect(actual.tables[name].rows[i][j]).toEqual(value);
+        }
+      }
+    }
+    await page.locator('#day-select').selectOption('combined');
+    await expect(page.locator('#result-table tbody tr')).toHaveCount(2);
+    await expect(page.locator('#result-table thead th').first()).toHaveText('day');
+    await page.screenshot({ path: testInfo.outputPath('combined-weartime.png'), fullPage: true });
+    // CSV also uses the selected analysis; switching back restores required participant controls.
+    await choose(app, page, example('HA/001/TimeMeasure1_Test11_Trial1.csv'));
+    await page.locator('#recording_start_time').fill('2024-01-02T06:59:30');
+    await page.getByRole('button', { name: 'Run', exact: true }).click();
+    await expect(page.locator('#status')).toHaveText('Processing complete.', { timeout: 60_000 });
+    await expect(page.getByRole('tab', { name: 'Weartime summary (1)', exact: true })).toBeVisible();
+    await page.locator('#pipeline_type').selectOption('mobilised');
+    await expect(page.locator('#cohort')).toBeEnabled();
     expect(errors).toEqual([]);
   } finally { await app.close(); }
 });
