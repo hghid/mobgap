@@ -34,6 +34,7 @@ test.beforeAll(() => {
   const python = process.env.MOBGAP_PYTHON || path.join(root, '..', '.venv',
     process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python');
   execFileSync(python, ['scripts/cwa_native_oracle.py'], { cwd: root, env: { ...process.env, MPLBACKEND: 'Agg' }, stdio: 'pipe' });
+  execFileSync(python, ['scripts/bam_native_oracle.py'], { cwd: root, env: { ...process.env, MPLBACKEND: 'Agg' }, stdio: 'pipe' });
 });
 
 test('offline Electron import, both pipelines, tables, export, cancellation and recovery', async ({}, testInfo) => {
@@ -421,6 +422,52 @@ test('offline Electron import, both pipelines, tables, export, cancellation and 
     await expect(page.getByRole('tab', { name: 'Weartime summary (1)', exact: true })).toBeVisible();
     await page.locator('#pipeline_type').selectOption('mobilised');
     await expect(page.locator('#cohort')).toBeEnabled();
+
+    // Mobilise-BAM uses the supplied driver's rotation, free-living thresholds and direct cohort pipeline per day.
+    const bamManifest = JSON.parse(await readFile(path.join(root, '.cache/bam-tests/synthetic/manifest.json')));
+    const bamCases = bamManifest.cases.filter((item) => item.options.cohort === 'PD' && item.rate === 100);
+    await choose(app, page, bamCases[0].path, 'cwa');
+    await page.locator('#pipeline_type').selectOption('bam');
+    await expect(page.locator('#cohort')).toHaveValue('PD');
+    await expect(page.locator('#measurement_condition')).toHaveValue('free_living');
+    await expect(page.locator('#measurement_condition')).toBeDisabled();
+    await page.locator('#height_m').fill('1.7');
+    await page.locator('#sensor_height_m').fill('0.8');
+    await page.getByRole('button', { name: 'Run', exact: true }).click();
+    await expect(page.locator('#status')).toHaveText('Processing complete.', { timeout: 60_000 });
+    for (const [index, item] of bamCases.entries()) {
+      await page.locator('#day-select').selectOption(String(index));
+      await page.getByRole('button', { name: 'Save results…' }).click();
+      await expect(page.locator('#status')).toHaveText('Results saved.');
+      const actual = JSON.parse(await readFile(output));
+      const expected = JSON.parse(await readFile(item.expected));
+      expect(actual.provenance.pipeline_type).toBe('bam');
+      expect(actual.provenance.pipeline).toBe('MobilisedPipelineImpaired');
+      expect(actual.provenance.bam_configuration.axis_flips).toEqual(['acc_x', 'acc_z', 'gyr_x', 'gyr_z']);
+      expect(actual.provenance.options.measurement_condition).toBe('free_living');
+      expect(actual.provenance.calendar_day.date).toBe(item.day.date);
+      for (const [name, table] of Object.entries(expected.tables)) {
+        expect(actual.tables[name].columns).toEqual(table.columns);
+        expect(actual.tables[name].rows).toHaveLength(table.rows.length);
+        for (const [i, row] of table.rows.entries()) for (const [j, value] of row.entries()) {
+          if (typeof value === 'number' && !/(^|_)(id|start|end|ic)$/.test(table.columns[j])) {
+            expect(actual.tables[name].rows[i][j]).toBeCloseTo(value, 6);
+          } else expect(actual.tables[name].rows[i][j]).toEqual(value);
+        }
+      }
+    }
+    await page.locator('#day-select').selectOption('combined');
+    const masks = page.getByRole('tab', { name: /^Walking bout masks/ });
+    await masks.click();
+    await expect(page.locator('#result-table thead th').first()).toHaveText('day');
+    await page.screenshot({ path: testInfo.outputPath('mobilise-bam.png'), fullPage: true });
+    const bamCsv = testInfo.outputPath('bam-masks.csv');
+    await app.evaluate(({ dialog }, filename) => {
+      dialog.showSaveDialog = async () => ({ canceled: false, filePath: filename });
+    }, bamCsv);
+    await page.getByRole('button', { name: 'Export table CSV…', exact: true }).click();
+    await expect(page.locator('#status')).toHaveText('CSV table saved.');
+    expect(await readFile(bamCsv, 'utf8')).toContain('"day",');
     expect(errors).toEqual([]);
   } finally { await app.close(); }
 });

@@ -30,7 +30,7 @@
       <div class="section-top"><div><h2 id="input-heading" tabindex="-1">Choose a recording</h2><p>Run Mobilise-D gait analysis or weartime detection on a lower-back IMU recording.</p></div><div class="import-buttons"><button id="choose">Choose CSV…</button><button id="choose-cwa" class="secondary">Choose CWA…</button></div></div>
       <div class="file-line"><strong id="filename">No recording selected</strong><span id="example-label"></span></div>
       <input id="cwa-file" type="file" accept=".cwa" hidden>
-      <p class="hint" id="format-hint">Recordings are processed separately for each calendar day, split at midnight on the device clock. CSV columns: samples, acc_x, acc_y, acc_z, gyr_x, gyr_y, gyr_z. Both formats require the Mobilise-D aligned lower-back sensor frame. No sample-count cap. CSV: up to 64 MiB. CWA: no file-size cap.</p>
+      <p class="hint" id="format-hint">Recordings are processed separately for each calendar day, split at midnight on the device clock. CSV columns: samples, acc_x, acc_y, acc_z, gyr_x, gyr_y, gyr_z. Six-axis lower-back IMU data is required. Mobilise-D/Weartime expect the aligned Mobilise-D sensor frame; Mobilise-BAM applies the driver's X/Z rotation first. No sample-count cap. CSV: up to 64 MiB. CWA: no file-size cap.</p>
       <form id="settings">
         <fieldset id="settings-fields">
           <legend>Recording & participant</legend>
@@ -45,7 +45,7 @@
             <label id="recording-start-field">CSV recording start (device clock)<input id="recording_start_time" name="recording_start_time" type="datetime-local" step="0.000001" required></label>
           </div>
         </fieldset>
-        <div class="run-line"><label class="pipeline-field">Pipeline type<select id="pipeline_type" name="pipeline_type"><option value="mobilised">Mobilise-D</option><option value="weartime">Weartime</option></select></label><button id="run" type="submit" disabled>Run</button><button id="cancel" type="button" class="secondary" hidden>Cancel</button><span id="pipeline-hint" class="hint">HA / COPD / CHF → healthy · MS / PD / PFF → impaired</span></div>
+        <div class="run-line"><label class="pipeline-field">Pipeline type<select id="pipeline_type" name="pipeline_type"><option value="mobilised">Mobilise-D</option><option value="weartime">Weartime</option><option value="bam">Mobilise-BAM</option></select></label><button id="run" type="submit" disabled>Run</button><button id="cancel" type="button" class="secondary" hidden>Cancel</button><span id="pipeline-hint" class="hint">HA / COPD / CHF → healthy · MS / PD / PFF → impaired</span></div>
       </form>
     </section>
     <section class="card status-card" aria-labelledby="status-heading">

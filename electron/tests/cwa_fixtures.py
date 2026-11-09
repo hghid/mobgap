@@ -31,10 +31,19 @@ def packed_time(value: datetime) -> int:
 
 
 def create_cwa(
-    csv_path: Path, destination: Path, axes: int = 6, repetitions: int = 1, *, epoch: datetime | None = None
+    csv_path: Path,
+    destination: Path,
+    axes: int = 6,
+    repetitions: int = 1,
+    *,
+    epoch: datetime | None = None,
+    flip_xz: bool = False,
 ) -> Path:
     """Wrap example sensor samples in checksummed AX6 packets at 100 Hz."""
     frame = pd.read_csv(csv_path)
+    if flip_xz:
+        for column in ["acc_x", "acc_z", "gyr_x", "gyr_z"]:
+            frame[column] = -frame[column]
     if repetitions != 1:
         frame = pd.concat([frame] * repetitions, ignore_index=True)
     acceleration = np.rint(frame[[f"acc_{axis}" for axis in "xyz"]].to_numpy() * 4096)

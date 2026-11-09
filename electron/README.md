@@ -4,6 +4,7 @@ A small Electron application running the repository's Python code in Pyodide, in
 It uses `MobilisedPipelineUniversal` with the default healthy and impaired pipelines from
 [`examples/pipeline/_03_preconfigured_mobilised_pipelines.py`](../examples/pipeline/_03_preconfigured_mobilised_pipelines.py).
 It also runs the default `WtdMegaritisSignal` weartime detector from `mobgap.weartime`.
+**Mobilise-BAM** reproduces the single-day configuration in Dr Cameron Kirk's supplied `driver_rev.py`.
 The installed application contains Python, WebAssembly, the MobGap wheel, models, scientific dependencies,
 and the Rust/WebAssembly CWA reader.
 It needs no system Python or network connection to process a recording.
@@ -86,6 +87,7 @@ npm run test:adapter
 npm run test:cwa
 npm run test:parity
 npm run test:weartime
+npm run test:bam
 npm run test:e2e
 npm run make
 npm run test:packaged
@@ -119,9 +121,10 @@ requests inside the application.
    Within the workspace, choose a recording with **Choose CSV…** or **Choose CWA…**. For CSV, try
    [`HA/001/TimeMeasure1_Test11_Trial1.csv`](../example_data/data_csv/HA/001/TimeMeasure1_Test11_Trial1.csv)
    or [`MS/001/TimeMeasure1_Test11_Trial1.csv`](../example_data/data_csv/MS/001/TimeMeasure1_Test11_Trial1.csv).
-2. Choose **Pipeline type**: **Mobilise-D** for gait analysis or **Weartime** for signal-based wear detection.
+2. Choose **Pipeline type**: **Mobilise-D** for gait analysis, **Weartime** for signal-based wear detection,
+   or **Mobilise-BAM** for the Revitalise driver configuration described below.
    Weartime requires all six IMU channels and at least 50 Hz. Participant metadata fields are disabled and unused
-   for Weartime. Both analysis types require the sample rate and units, and CSV requires a device-clock start time.
+   for Weartime. All analysis types require the sample rate and units, and CSV requires a device-clock start time.
    For Mobilise-D, check the recording and participant settings. Exact matches to any of the nine repository examples are
    recognised by SHA-256 and use their companion participant metadata, 100 Hz sampling, acceleration in g,
    and laboratory measurement conditions. Renaming a file does not change recognition. A different file with
@@ -133,6 +136,12 @@ requests inside the application.
    timestamps, so the app cannot infer their midnight boundaries, including for the bundled examples.
 3. Select **Run**. For Mobilise-D, HA, COPD, and CHF use `MobilisedPipelineHealthy`; MS, PD, and PFF use
    `MobilisedPipelineImpaired`. The pipeline uses its preconfigured algorithms and thresholds.
+   Mobilise-BAM defaults the cohort to **PD**, fixes **free_living**, negates `acc_x`, `acc_z`, `gyr_x`, and `gyr_z`,
+   then runs a fresh default `MobilisedPipelineHealthy` for HA/COPD/CHF or `MobilisedPipelineImpaired` for PD/MS/PFF.
+   The cohort remains editable; this is equivalent to changing the driver's `COHORT` setting. Heights are entered
+   in metres, matching the driver's centimetre-to-metre conversion. Confirm that its fixed 180° rotation about
+   sensor Y matches the recording's mounting. Recording metadata also retains `test=Recording4` and
+   `time_measure=TimeMeasure1`. It does not add automatic reorientation or change algorithm parameters.
    Weartime runs a fresh `WtdMegaritisSignal` on each day after converting acceleration to m/s² and sensor axes
    to the body frame. It uses the detector's default parameters, including 60-minute macro windows and 5-second
    micro windows. These defaults were tuned on one dataset; see the detector's documentation for its scientific scope.
@@ -145,15 +154,21 @@ requests inside the application.
    includes total wear minutes, wear minutes during 07:00–22:00, non-wear minutes, recording duration, and wear fraction.
    Interval timestamps use the naive device clock. Waking-hour intersections use the actual first-sample time,
    including for partial days; sample zero is not assumed to be midnight. No timezone or DST offset is inferred.
+   Mobilise-BAM provides the five gait tables plus **Walking bout masks**, containing the driver's per-WB DMO
+   plausibility mask. Its JSON provenance records the rotation and recording metadata.
    For CWA, the **Timeseries** tab shows the selected day's X/Y/Z traces. Use **Sensor values** to switch
    between accelerometer (g) and gyroscope (°/s). The plot uses decoded samples at the selected resampling
    rate, before pipeline filtering or body-frame conversion. Min/max subsampling preserves peaks with at most
    2,000 points per axis; the caption shows the decoded sample count and device-clock range.
    Switching calendar days updates the plot while keeping the chosen sensor group.
+   Plots show decoded input before the BAM rotation, just as they show input before other pipeline preprocessing.
    Once all days finish, **Combined** appears in **Calendar day**. It joins every result table with `day` as its
    first column, preserving day-relative interval indices and repeated daily identifiers. It does not recompute
    daily aggregate statistics or join scientific pipeline state across days. Failed/skipped days remain explicit
    in notices and per-day JSON provenance. Signal plots remain available only for individual days.
+   For Mobilise-BAM, Combined also joins the masks. It does not reproduce the driver's separate pooled weekly
+   aggregation, multi-participant scan, or `Day8` skipping. The app's common under-five-second edge-day handling
+   still applies; the supplied driver's `MIN_DAY_HOURS=0` adds no extra valid-day duration cutoff.
 5. **Save results…**, beside **Calendar day**, exports the selected day's JSON, with a date-based filename, containing all table rows,
    day boundaries, day-relative sample indices, processing notices, settings, original input hash, pipeline parameters,
    and package/runtime versions. It does not export raw recordings or plot previews. Export other days using the day selector.
@@ -179,8 +194,8 @@ samples,acc_x,acc_y,acc_z,gyr_x,gyr_y,gyr_z
 
 - `samples` must be a contiguous zero-based sample sequence without duplicates or gaps.
 - All six sensor channels must be finite numbers. Accelerometer-only files cannot run these preconfigured pipelines.
-- Axes must match the aligned lower-back sensor frame used by the examples. MobGap converts this to its body frame;
-  the app does not detect or correct arbitrary sensor mounting.
+- Mobilise-D and Weartime expect the aligned lower-back sensor frame used by the examples. Mobilise-BAM
+  first applies the driver's fixed X/Z flips. MobGap then converts to its body frame; the app does not infer mounting.
 - Explicitly select acceleration in **g** or **m/s²**. Gyroscope data must already be in **degrees/second**.
 - For custom files, enter sampling rate, cohort, participant height, sensor height, and measurement condition.
   Heights are in metres. These values are not inferred from signal values or filenames.
@@ -250,6 +265,7 @@ npm run runtime:lock
 npm run test:runtime
 npm run test:parity
 npm run test:weartime
+npm run test:bam
 npm run test:cwa
 npm run test:e2e
 npm run make
@@ -278,6 +294,7 @@ npm run test:adapter
 npm run test:runtime
 npm run test:parity
 npm run test:weartime
+npm run test:bam
 npm run test:cwa
 npm run test:e2e
 npm run make
@@ -294,6 +311,37 @@ the same tolerances and exact indices/timestamps. Adapter tests compare partial-
 native detector's localized-clock property. The actual Electron worker also compares both midnight CWA batches
 with independent native weartime results. The weartime modules use standard-library typing features available
 on every supported Python version, with no extra runtime dependency.
+
+`test:bam` independently executes the supplied driver's `run_day` via real `data.mat` and `infoForAlgo.mat`
+inputs made from native CWA decoding, including its centimetre metadata conversion. The checked-in single-day
+excerpt in `tests/fixtures/driver_rev_single_day.py` preserves Dr Cameron Kirk's code/configuration and records
+the original source SHA-256. The original `driver_rev.py` is optional and ignored locally because it contains
+study-specific directory settings; those paths are not copied into the app or the test excerpt.
+The adapter never imports the reference driver. Tests compare all six tables, including threshold masks,
+across midnight for healthy and impaired configurations at 100 and 60 Hz. Microsecond timestamps and
+IDs/interval boundaries/masks match exactly; other numeric outputs use `rtol=1e-7`, `atol=1e-8`.
+
+To compare one day of an explicitly selected private recording, from `electron/`:
+
+```sh
+node scripts/test-bam.mjs --input "/path/to/recording.cwa" --height 1.7 --sensor-height 0.8 --cohort PD
+```
+
+Use the participant's actual heights in metres. Add `--date YYYY-MM-DD` for a specific calendar day;
+otherwise the first (possibly shorter) day is compared. Add `--reference driver_rev.py` to execute the original
+supplied script directly instead of its single-day excerpt. Optional `--max-seconds` bounds a smoke test and
+does not constitute a full-day comparison. Raw MATLAB adapters, arrays and result reports are generated only
+in ignored `.cache/bam-tests/`; no private recording is added to the application or Git. The comparison report
+includes decode/transfer/pipeline timing and peak Node/Pyodide process RSS.
+
+Local real-AX6 validation used PD, 1.7 m height and 0.8 m sensor height supplied by the user at 100 Hz. Both
+the 2,919,170-sample first partial day and a complete 8,640,000-sample calendar day matched the original driver
+across all six tables, with 209/210 walking bouts and 9,601/13,893 strides respectively. These checks establish
+agreement on those days, not scientific validation of BAM defaults for every recording or sensor mounting.
+On the local macOS arm64 Node/Pyodide benchmark, the full-day run took approximately 12.6 seconds inside
+the adapter and 16.3 seconds including day decoding and transfers, with about 3,152 MiB peak process RSS.
+This is the benchmark process's measured memory, not total Electron memory or a guaranteed requirement on
+other machines; full-day runs still need substantial memory despite bounded input-file reads.
 
 `test:cwa` uses an isolated native 0.5.0 reader in `.cache/cwa-native` as the oracle. Its scientific dependencies
 come from the existing native comparison environment; that test-only install does not alter MobGap's native

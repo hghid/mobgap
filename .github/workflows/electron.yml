@@ -56,6 +56,7 @@ jobs:
       - run: npm run test:cwa
       - run: npm run test:parity
       - run: npm run test:weartime
+      - run: npm run test:bam
       - name: Test development app (Linux)
         if: runner.os == 'Linux'
         run: xvfb-run -a npm run test:e2e

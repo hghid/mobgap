@@ -6,3 +6,4 @@ playwright-report/
 .cache/
 LICENSE
 NOTICE
+driver_rev.py

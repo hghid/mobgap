@@ -9,9 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Add an offline Electron application in `electron/` to run the preconfigured healthy and impaired Mobilise-D
-  pipelines or the signal-based weartime detector on CSV and six-axis CWA recordings, with progress, daily and
-  combined result tables, and JSON/full-table CSV export. Weartime uses the actual device clock for partial-day
-  waking hours and requires at least 50 Hz; participant metadata is required only for Mobilise-D.
+  pipelines, the driver_rev.py Mobilise-BAM daily configuration, or the signal-based weartime detector on CSV
+  and six-axis CWA recordings, with progress, daily and combined result tables, and JSON/full-table CSV export.
+  Weartime uses the actual device clock for partial-day waking hours and requires at least 50 Hz;
+  participant metadata is required for the gait analysis modes.
+  Mobilise-BAM applies the driver's fixed X/Z sensor-axis rotation and free-living conditions, selects the
+  default healthy/impaired pipeline by cohort, and exposes its walking-bout threshold masks.
   Start with Inkspot Science branding, platform information, MobGap attribution, and direct CWA file selection.
   Provide portable ZIP builds and configure a Windows Squirrel installer with shortcut and uninstall handling.
   CWA input has no application file-size cap. Process midnight-aligned calendar days separately, including shorter

@@ -1,8 +1,12 @@
-"""Validate one recording and run the unchanged preconfigured Mobilise-D pipeline.
+"""Validate daily inputs for Mobilise-D, Mobilise-BAM and signal-based Weartime.
 
 The app supplies sensor-frame acceleration in explicitly selected units, gyroscope
 data in degrees/second, and participant/recording metadata. Samples must be a
 contiguous zero-based sequence; arbitrary sensor mounting is not corrected here.
+Mobilise-BAM explicitly applies driver_rev.py's 180-degree rotation about sensor Y
+before the standard body-frame conversion, with free_living conditions and a
+fresh default healthy/impaired pipeline selected by cohort. Heights arrive in
+metres; the driver's MATLAB input converts its centimetre metadata to these units.
 """
 
 from __future__ import annotations
@@ -24,7 +28,7 @@ from packaging.requirements import Requirement
 
 from mobgap.consts import GRAV_MS2
 from mobgap.data import GaitDatasetFromData
-from mobgap.pipeline import MobilisedPipelineUniversal
+from mobgap.pipeline import MobilisedPipelineHealthy, MobilisedPipelineImpaired, MobilisedPipelineUniversal
 from mobgap.utils.conversions import to_body_frame
 from mobgap.weartime import WtdMegaritisSignal
 
@@ -34,6 +38,8 @@ if TYPE_CHECKING:
 CHANNELS = ["acc_x", "acc_y", "acc_z", "gyr_x", "gyr_y", "gyr_z"]
 COHORTS = {"HA", "COPD", "CHF", "MS", "PD", "PFF"}
 GAIT_TABLES = ["aggregated", "walking_bouts", "strides", "gait_sequences", "initial_contacts"]
+BAM_FLIP_AXES = ["acc_x", "acc_z", "gyr_x", "gyr_z"]
+BAM_RECORDING_METADATA = {"measurement_condition": "free_living", "test": "Recording4", "time_measure": "TimeMeasure1"}
 WEARTIME_TABLES = ["weartime_summary", "weartime", "weartime_diagnostics"]
 RUNTIME_NOTICES = []
 
@@ -93,7 +99,13 @@ def short_day_result(samples: int, options: dict[str, Any], digest: str, input_f
         "status": "skipped",
         "tables": {
             name: {"columns": [], "rows": []}
-            for name in (WEARTIME_TABLES if options.get("pipeline_type") == "weartime" else GAIT_TABLES)
+            for name in (
+                WEARTIME_TABLES
+                if options.get("pipeline_type") == "weartime"
+                else [*GAIT_TABLES, "walking_bout_mask"]
+                if options.get("pipeline_type") == "bam"
+                else GAIT_TABLES
+            )
         },
         "warnings": ["This boundary day contains fewer than 5 seconds of data; the pipeline was not run."],
         "provenance": {
@@ -155,10 +167,10 @@ def validate_runtime() -> None:
 def validate_options(options: dict[str, Any]) -> None:
     """Reject incomplete metadata instead of guessing physiological inputs."""
     pipeline_type = options.get("pipeline_type", "mobilised")
-    if pipeline_type not in {"mobilised", "weartime"}:
-        raise ValueError("Select Mobilise-D or Weartime.")
+    if pipeline_type not in {"mobilised", "weartime", "bam"}:
+        raise ValueError("Select Mobilise-D, Mobilise-BAM or Weartime.")
     numeric = [("sampling_rate_hz", 1000)]
-    if pipeline_type == "mobilised":
+    if pipeline_type != "weartime":
         numeric.extend([("height_m", 3), ("sensor_height_m", 3)])
     for name, upper in numeric:
         value = options.get(name)
@@ -181,6 +193,8 @@ def validate_options(options: dict[str, Any]) -> None:
         raise ValueError("Select a supported cohort (HA, COPD, CHF, MS, PD, PFF).")
     if options.get("measurement_condition") not in {"laboratory", "free_living"}:
         raise ValueError("Select laboratory or free-living measurement conditions.")
+    if pipeline_type == "bam" and options["measurement_condition"] != "free_living":
+        raise ValueError("Mobilise-BAM requires free_living measurement conditions, as in driver_rev.py.")
 
 
 def load_csv(csv_bytes: bytes, options: dict[str, Any]) -> pd.DataFrame:
@@ -321,17 +335,33 @@ def _process_data(
             data, original_bytes, options, report, started, input_format, input_sha256, source, start_time
         )
     key = "recording"
+    bam = options.get("pipeline_type") == "bam"
     participant = {name: options[name] for name in ["cohort", "height_m", "sensor_height_m"]}
+    recording_metadata = {"measurement_condition": options["measurement_condition"]}
+    if bam:
+        # driver_rev.py rotates both sensors 180° about Y before the standard body-frame conversion.
+        # Own the copy so this day cannot alter the recording used by other analyses or subsequent days.
+        data = data.copy()
+        data.loc[:, BAM_FLIP_AXES] = -data.loc[:, BAM_FLIP_AXES]
+        key = (options["cohort"], "recording", "TimeMeasure1", start_time.date().isoformat() if start_time else "day")
+        recording_metadata = dict(BAM_RECORDING_METADATA)
     dataset = GaitDatasetFromData(
         {key: {"LowerBack": data}},
         options["sampling_rate_hz"],
         {key: participant},
-        {key: {"measurement_condition": options["measurement_condition"]}},
+        {key: recording_metadata},
+        index_cols=["cohort", "participant", "time_point", "day"] if bam else None,
     )
     report("process", "Running the preconfigured Mobilise-D pipeline…")
     with warnings.catch_warnings(record=True) as captured:
         warnings.simplefilter("always")
-        pipeline = MobilisedPipelineUniversal().safe_run(dataset)
+        if bam:
+            pipeline_class = (
+                MobilisedPipelineHealthy if options["cohort"] in {"HA", "COPD", "CHF"} else MobilisedPipelineImpaired
+            )
+            pipeline = pipeline_class().safe_run(dataset)
+        else:
+            pipeline = MobilisedPipelineUniversal().safe_run(dataset).pipeline_
     report("tables", "Preparing result tables…")
     results = {
         "aggregated": table(pipeline.aggregated_parameters_),
@@ -340,6 +370,8 @@ def _process_data(
         "gait_sequences": table(pipeline.gs_list_),
         "initial_contacts": table(pipeline.raw_ic_list_),
     }
+    if bam:
+        results["walking_bout_mask"] = table(pipeline.per_wb_parameter_mask_)
     # pandas split uses "data"; name rows consistently in the message contract.
     for value in results.values():
         if "data" in value:
@@ -349,9 +381,9 @@ def _process_data(
         "tables": results,
         "warnings": list(dict.fromkeys([*RUNTIME_NOTICES, *(str(item.message) for item in captured)])),
         "provenance": {
-            "pipeline": type(pipeline.pipeline_).__name__,
-            "pipeline_type": "mobilised",
-            "parameters": repr(pipeline.pipeline_.get_params(deep=False)),
+            "pipeline": type(pipeline).__name__,
+            "pipeline_type": "bam" if bam else "mobilised",
+            "parameters": repr(pipeline.get_params(deep=False)),
             "options": options,
             "input_sha256": input_sha256 if input_sha256 is not None else hashlib.sha256(original_bytes).hexdigest(),
             "input_format": input_format,
@@ -362,7 +394,23 @@ def _process_data(
             "versions": {
                 name: version(name) for name in ["mobgap", "numpy", "pandas", "scipy", "scikit-learn", "tpcp"]
             },
-            "sensor_frame": "Mobilise-D aligned lower-back sensor; gyroscope in deg/s",
+            "sensor_frame": "Input sensor frame rotated 180 degrees about Y before standard body-frame conversion; gyroscope in deg/s"
+            if bam
+            else "Mobilise-D aligned lower-back sensor; gyroscope in deg/s",
+            **(
+                {
+                    "bam_configuration": {
+                        "reference": "driver_rev.py, Dr Cameron Kirk, revised 2026-11-03 (single-day run_day)",
+                        "axis_flips": BAM_FLIP_AXES,
+                        "rotation": "180 degrees about sensor Y",
+                        "recording_metadata": recording_metadata,
+                        "group_label": list(dataset.group_label),
+                        "height_unit": "m (driver infoForAlgo Height and SensorHeight are converted from cm)",
+                    }
+                }
+                if bam
+                else {}
+            ),
         },
     }
 

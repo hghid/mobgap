@@ -220,7 +220,7 @@ def test_weartime_validation_does_not_require_participant_metadata():
     validate_options(options)
     with pytest.raises(ValueError, match="at least 50"):
         validate_options({**options, "sampling_rate_hz": 49.99})
-    with pytest.raises(ValueError, match="Select Mobilise-D or Weartime"):
+    with pytest.raises(ValueError, match="Select Mobilise-D"):
         validate_options({**options, "pipeline_type": "other"})
     raw = (EXAMPLES / "HA/001/TimeMeasure1_Test11_Trial1.csv").read_bytes()
     with pytest.raises(ValueError, match="start time"):

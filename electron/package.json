@@ -24,11 +24,12 @@
     "test": "node --test tests/*.test.mjs",
     "test:e2e": "playwright test",
     "test:packaged": "node scripts/test-packaged.mjs",
-    "test:adapter": "uv run --project .. --no-sync python -m pytest tests/test_adapter.py",
+    "test:adapter": "uv run --project .. --no-sync python -m pytest tests/test_adapter.py tests/test_bam.py",
     "test:cwa": "node scripts/test-cwa.mjs",
     "test:runtime": "node scripts/test-runtime.mjs",
     "test:parity": "node scripts/test-runtime.mjs --compare --all",
-    "test:weartime": "node scripts/test-runtime.mjs --compare --weartime --all"
+    "test:weartime": "node scripts/test-runtime.mjs --compare --weartime --all",
+    "test:bam": "node scripts/test-bam.mjs"
   },
   "devDependencies": {
     "@electron-forge/cli": "8.0.1",

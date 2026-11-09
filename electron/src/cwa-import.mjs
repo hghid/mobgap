@@ -42,7 +42,7 @@ export async function decodeCwa(source, sampleRateHz, progress = () => {}, cut) 
       const chunk = reader.provide(await read(request.offset, request.length));
       if (!chunk || !chunk.timestamps_us.length) continue;
       const missing = READER_CHANNELS.filter((name) => !chunk.columns[name]);
-      if (missing.length) throw new Error('This CWA recording is missing accelerometer or gyroscope channels. Mobilise-D and Weartime require all six IMU channels; accelerometer-only AX3 recordings are unsupported.');
+      if (missing.length) throw new Error('This CWA recording is missing accelerometer or gyroscope channels. Mobilise-D, Mobilise-BAM and Weartime require all six IMU channels; accelerometer-only AX3 recordings are unsupported.');
       count += chunk.timestamps_us.length;
       for (const name of READER_CHANNELS) {
         const channel = chunk.columns[name];

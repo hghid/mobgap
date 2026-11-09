@@ -4,6 +4,7 @@ import { combineDayResults } from './results.mjs';
 const $ = (id) => document.getElementById(id);
 const names = { aggregated: 'Aggregated', walking_bouts: 'Walking bouts', strides: 'Strides',
   gait_sequences: 'Gait sequences', initial_contacts: 'Initial contacts',
+  walking_bout_mask: 'Walking bout masks',
   weartime_summary: 'Weartime summary', weartime: 'Wear intervals', weartime_diagnostics: 'Weartime diagnostics' };
 const participantFields = ['cohort', 'height_m', 'sensor_height_m', 'measurement_condition'];
 const fields = ['sampling_rate_hz', 'acceleration_unit', ...participantFields, 'recording_start_time', 'pipeline_type'];
@@ -34,12 +35,17 @@ function controls() {
   $('show-start').disabled = busy;
   $('pipeline_type').disabled = busy;
   const weartime = $('pipeline_type').value === 'weartime';
+  const bam = $('pipeline_type').value === 'bam';
   for (const field of participantFields) $(field).disabled = busy || weartime;
+  $('measurement_condition').disabled = busy || weartime || bam;
+  if (bam) $('measurement_condition').value = 'free_living';
   $('sampling_rate_hz').min = weartime ? '50' : '0.01';
   $('pipeline-hint').textContent = weartime ? 'Signal-based wear detection · ≥50 Hz · no participant details required' :
+    bam ? 'BAM · X/Z axis rotation · free living · cohort defaults to PD' :
     'HA / COPD / CHF → healthy · MS / PD / PFF → impaired';
   $('metadata-hint').textContent = weartime ?
     'Weartime uses the default WtdMegaritisSignal detector on all six IMU channels at ≥50 Hz. Check sampling rate and units; participant details are not required.' :
+    bam ? 'Mobilise-BAM matches driver_rev.py: negate X and Z acceleration and gyroscope axes, use free_living, and select the default healthy/impaired pipeline by cohort (PD by default). Enter heights in metres and confirm this rotation matches the sensor mounting.' :
     selected?.example ? 'Metadata loaded from the matching repository example. You can review it before running.' :
     selected?.format === 'cwa' ?
       'CWA is decoded locally with cubic resampling (default 100 Hz), acceleration in g and gyroscope in °/s. Enter participant measurements and condition; mounting must match the Mobilise-D frame.' :
@@ -266,6 +272,7 @@ function useRecording(chosen) {
       $('sampling_rate_hz').value = '100';
       $('acceleration_unit').value = 'g';
     }
+    if ($('pipeline_type').value === 'bam') $('cohort').value = 'PD';
     if (ready) status('Recording selected. Check the metadata and run the pipeline.');
     controls();
 }
@@ -299,14 +306,17 @@ $('day-select').addEventListener('change', () => {
   result = $('day-select').value === 'combined' ? combinedResult : dayResults[Number($('day-select').value)];
   renderResults();
 });
-$('pipeline_type').addEventListener('change', controls);
+$('pipeline_type').addEventListener('change', () => {
+  if ($('pipeline_type').value === 'bam') $('cohort').value = 'PD';
+  controls();
+});
 $('plot-group').addEventListener('change', renderTable);
 
 $('settings').addEventListener('submit', (event) => {
   event.preventDefault();
   if (!ready || busy || !selected || !$('settings').reportValidity()) return;
   const options = Object.fromEntries(fields.map((name) => [name, $(name).type === 'number' ? Number($(name).value) : $(name).value]));
-  if (options.pipeline_type === 'mobilised' && options.sensor_height_m > options.height_m) { fail('Sensor height cannot exceed participant height.'); return; }
+  if (options.pipeline_type !== 'weartime' && options.sensor_height_m > options.height_m) { fail('Sensor height cannot exceed participant height.'); return; }
   if (options.pipeline_type === 'weartime') for (const field of participantFields) delete options[field];
   result = null;
   dayResults = [];
