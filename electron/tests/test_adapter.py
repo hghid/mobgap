@@ -65,13 +65,45 @@ def test_custom_script_requires_entry_point():
         load_daily_script("def process(): pass")
 
 
+@pytest.mark.parametrize(
+    ("mode", "cohort"), [("mobilised", "HA"), ("mobilised", "MS"), ("bam", "PD"), ("weartime", "HA")]
+)
+def test_editable_builtin_templates_match(mode, cohort, options):
+    raw = (EXAMPLES / "MS/001/TimeMeasure1_Test11_Trial1.csv").read_bytes()
+    options = {
+        **options,
+        "pipeline_type": mode,
+        "cohort": cohort,
+        "measurement_condition": "free_living",
+        "recording_start_time": "2024-01-02T06:59:45",
+    }
+    data = load_csv(raw, options)
+    day = csv_days(data, options)[0]
+    expected = process_csv_day(data, day, options, "a" * 64)
+    if mode == "weartime":
+        options = {
+            key: value
+            for key, value in options.items()
+            if key not in {"height_m", "sensor_height_m", "measurement_condition", "cohort"}
+        }
+    template = Path(__file__).parents[1] / f"src/{mode}_pipeline.py"
+    actual = process_csv_day(data, day, options, "a" * 64, analyze_day=load_daily_script(template.read_text()))
+    assert actual["tables"] == expected["tables"]
+
+
 def test_custom_cwa_contract(options):
     channels = {name: np.ones(600, dtype=np.float32) for name in CHANNELS}
     timestamps = np.arange(600, dtype=np.int64) * 10_000
     options = {**options, "pipeline_type": "custom"}
 
     def analyze_day(data, *, height_m, sensor_height_m, condition, cohort, sampling_rate_hz):
-        assert (height_m, sensor_height_m, condition, cohort, sampling_rate_hz) == (1.59, 0.964, "laboratory", "HA", 100)
+        assert (height_m, sensor_height_m, condition, cohort, sampling_rate_hz) == (
+            1.59,
+            0.964,
+            "laboratory",
+            "HA",
+            100,
+        )
         return {"last_sample": data.tail(1)}
 
     result = process_cwa(None, channels, timestamps, {}, options, analyze_day=analyze_day, input_sha256="a" * 64)

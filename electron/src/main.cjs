@@ -51,7 +51,8 @@ app.whenReady().then(async () => {
   }
   const allowed = new Set(['src/index.html', 'src/styles.css', 'src/renderer.mjs', 'src/worker.mjs', 'src/cwa-import.mjs',
     'src/timeseries.mjs', 'src/timeseries-plot.mjs', 'src/results.mjs', 'src/inkspot-logo.png',
-    'src/impaired_pipeline.py', 'runtime/manifest.json', ...Object.keys(manifest.integrity).map((name) => `runtime/${name}`)]);
+    'src/impaired_pipeline.py', 'src/mobilised_pipeline.py', 'src/bam_pipeline.py', 'src/weartime_pipeline.py',
+    'runtime/manifest.json', ...Object.keys(manifest.integrity).map((name) => `runtime/${name}`)]);
   protocol.handle('mobgap', async (request) => {
     const name = assetName(request.url, allowed);
     if (request.method !== 'GET' || !name) return new Response('Not found', { status: 404 });

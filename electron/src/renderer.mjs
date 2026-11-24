@@ -22,8 +22,11 @@ let activeTable;
 let page = 0;
 let started;
 let watchdog;
-let scriptDirty = false;
-let template;
+const scripts = Object.fromEntries(Object.entries({
+  mobilised: 'mobilised_pipeline.py', bam: 'bam_pipeline.py',
+  weartime: 'weartime_pipeline.py', custom: 'impaired_pipeline.py',
+}).map(([mode, filename]) => [mode, { filename, name: filename, source: '', dirty: false, enabled: mode === 'custom' }]));
+const currentScript = () => scripts[$('pipeline_type').value];
 let scriptWorkerUsed = false;
 const PAGE_SIZE = 100;
 
@@ -40,7 +43,11 @@ function controls() {
   const weartime = $('pipeline_type').value === 'weartime';
   const bam = $('pipeline_type').value === 'bam';
   const custom = $('pipeline_type').value === 'custom';
-  $('script-panel').hidden = !custom;
+  const script = currentScript();
+  $('script-toggle-label').hidden = custom;
+  $('script-toggle').checked = script.enabled;
+  $('script-toggle').disabled = busy;
+  $('script-panel').hidden = !script.enabled;
   $('script-panel').disabled = busy;
   for (const field of participantFields) $(field).disabled = busy || weartime;
   $('measurement_condition').disabled = busy || weartime || bam;
@@ -59,7 +66,7 @@ function controls() {
       'Enter recording units, sample rate and participant measurements. The app does not infer these from signal values.';
   $('choose').disabled = busy;
   $('choose-cwa').disabled = busy;
-  $('run').disabled = !ready || busy || !selected || (custom && !$('script-source').value.trim());
+  $('run').disabled = !ready || busy || !selected || (script.enabled && !script.source.trim());
   $('settings-fields').disabled = busy;
   $('acceleration_unit').disabled = selected?.format === 'cwa';
   $('recording_start_time').disabled = selected?.format === 'cwa';
@@ -322,19 +329,34 @@ $('day-select').addEventListener('change', () => {
 });
 $('pipeline_type').addEventListener('change', () => {
   if ($('pipeline_type').value === 'bam') $('cohort').value = 'PD';
+  showScript();
   controls();
 });
 $('plot-group').addEventListener('change', renderTable);
 
 const editor = $('script-source');
+function showScript() {
+  const script = currentScript();
+  editor.value = script.source;
+  $('script-name').textContent = script.name;
+  $('script-reset').disabled = script.template === undefined;
+}
+
 function replaceScript(source, name) {
-  if (scriptDirty && !window.confirm('Discard unsaved script edits?')) return;
-  editor.value = source;
-  $('script-name').textContent = name;
-  scriptDirty = false;
+  const script = currentScript();
+  if (script.dirty && !window.confirm('Discard unsaved script edits?')) return;
+  Object.assign(script, { source, name, dirty: false });
+  showScript();
   controls();
 }
-editor.addEventListener('input', () => { scriptDirty = true; controls(); });
+$('script-toggle').onchange = () => {
+  currentScript().enabled = $('script-toggle').checked;
+  controls();
+};
+editor.addEventListener('input', () => {
+  Object.assign(currentScript(), { source: editor.value, dirty: true });
+  controls();
+});
 editor.addEventListener('keydown', (event) => {
   if (event.key === 'Tab' && !event.shiftKey && editor.selectionStart === editor.selectionEnd) {
     event.preventDefault();
@@ -345,19 +367,25 @@ editor.addEventListener('keydown', (event) => {
 $('script-open').onclick = () => $('script-file').click();
 $('script-file').onchange = async () => {
   const file = $('script-file').files[0];
+  const script = currentScript();
   $('script-file').value = '';
   if (!file) return;
   try {
     if (!/\.py$/i.test(file.name) || file.size > 256 * 1024) throw new Error('Choose a Python file of at most 256 KiB.');
-    replaceScript(await file.text(), file.name);
+    const source = await file.text();
+    if (!busy && script === currentScript()) replaceScript(source, file.name);
   } catch (error) { fail(error.message); }
 };
-$('script-reset').onclick = () => replaceScript(template, 'impaired_pipeline.py');
+$('script-reset').onclick = () => {
+  const script = currentScript();
+  replaceScript(script.template, script.filename);
+};
 $('script-save').onclick = async () => {
   try {
-    const source = editor.value;
+    const script = currentScript();
+    const source = script.source;
     if (await window.mobgap.saveScript(source)) {
-      if (editor.value === source) scriptDirty = false;
+      if (script.source === source) script.dirty = false;
       status('Python script saved.');
     }
   } catch (error) { fail(error.message); }
@@ -383,7 +411,7 @@ $('settings').addEventListener('submit', (event) => {
   started = performance.now();
   requestId = crypto.randomUUID();
   status('Sending recording to the processing worker…', true);
-  const script = options.pipeline_type === 'custom' ? editor.value : undefined;
+  const script = currentScript().enabled ? currentScript().source : undefined;
   scriptWorkerUsed = script !== undefined;
   // Retain the selected file for repeat runs; transfer just one fresh job buffer.
   if (selected.format === 'cwa') {
@@ -422,13 +450,14 @@ $('save-csv').addEventListener('click', async () => {
   finally { $('save-csv').disabled = activeTable === 'timeseries' || !result?.tables[activeTable]?.columns.length; }
 });
 setInterval(() => { if (started !== null && started !== undefined) $('elapsed').textContent = `${Math.floor((performance.now() - started) / 1000)} s elapsed`; }, 1000);
-try {
-  const response = await fetch('impaired_pipeline.py');
-  if (!response.ok) throw new Error('The impaired pipeline template is unavailable.');
-  template = await response.text();
-  replaceScript(template, 'impaired_pipeline.py');
-} catch (error) {
-  $('script-name').textContent = error.message;
-  $('script-reset').disabled = true;
-}
+await Promise.all(Object.values(scripts).map(async (script) => {
+  try {
+    const response = await fetch(script.filename);
+    if (!response.ok) throw new Error('Template unavailable');
+    script.template = script.source = await response.text();
+  } catch {
+    script.name = `${script.filename} unavailable`;
+  }
+}));
+showScript();
 initialize();

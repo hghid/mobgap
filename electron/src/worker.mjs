@@ -52,7 +52,7 @@ self.onmessage = async ({ data }) => {
     setPython('run_options', data.options);
     py.runPython('validate_options(run_options)');
     py.runPython('daily_function = None');
-    if (data.options.pipeline_type === 'custom') {
+    if (data.options.pipeline_type === 'custom' || data.script !== undefined) {
       setPython('script_text', data.script);
       py.runPython('daily_function = load_daily_script(script_text)\nrun_options["script_sha256"] = hashlib.sha256(script_text.encode()).hexdigest()');
     }

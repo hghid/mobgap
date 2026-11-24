@@ -48,6 +48,7 @@
           </div>
         </fieldset>
         <div class="run-line"><label class="pipeline-field">Pipeline type<select id="pipeline_type" name="pipeline_type"><option value="mobilised">Mobilise-D</option><option value="weartime">Weartime</option><option value="bam">Mobilise-BAM</option><option value="custom">Custom Python</option></select></label><button id="run" type="submit" disabled>Run</button><button id="cancel" type="button" class="secondary" hidden>Cancel</button><span id="pipeline-hint" class="hint">HA / COPD / CHF → healthy · MS / PD / PFF → impaired</span></div>
+        <label id="script-toggle-label"><input id="script-toggle" type="checkbox"> Use Python script</label>
         <fieldset id="script-panel" hidden>
           <legend>Daily analysis script</legend>
           <label for="script-source" id="script-name">impaired_pipeline.py</label>

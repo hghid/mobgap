@@ -252,11 +252,11 @@ def custom_tables(function, data, options):
     """Invoke the daily analysis contract and validate its exportable tables."""
     frames = function(
         data,
-        height_m=options["height_m"],
-        sensor_height_m=options["sensor_height_m"],
-        condition=options["measurement_condition"],
+        height_m=options.get("height_m"),
+        sensor_height_m=options.get("sensor_height_m"),
+        condition=options.get("measurement_condition"),
         sampling_rate_hz=options["sampling_rate_hz"],
-        cohort=options["cohort"],
+        cohort=options.get("cohort"),
     )
     if not isinstance(frames, dict) or not frames:
         raise ValueError("analyze_day must return a nonempty dictionary of named DataFrames.")
@@ -266,7 +266,7 @@ def custom_tables(function, data, options):
             not isinstance(name, str)
             or not re.fullmatch(r"[a-z][a-z_]{0,39}", name)
             or name in {"constructor", "timeseries"}
-            or not isinstance(frame, pd.DataFrame)
+            or (frame is not None and not isinstance(frame, pd.DataFrame))
         ):
             raise ValueError(f"Invalid result {name!r}: use a lowercase table name and a pandas DataFrame.")
         value = table(frame)
@@ -381,8 +381,11 @@ def _process_data(
     start_time: datetime | None = None,
     analyze_day=None,
 ) -> dict[str, Any]:
-    if options.get("pipeline_type") == "custom":
+    if analyze_day is not None or options.get("pipeline_type") == "custom":
         report("process", "Running analyze_day…")
+        samples = len(data)
+        data = data.copy(deep=False)
+        data.attrs["first_sample_device_time"] = start_time
         with warnings.catch_warnings(record=True) as captured:
             warnings.simplefilter("always")
             results = custom_tables(analyze_day, data, options)
@@ -398,8 +401,8 @@ def _process_data(
                 "input_sha256": input_sha256,
                 "source": source,
                 "options": options,
-                "samples": len(data),
-                "duration_s": len(data) / options["sampling_rate_hz"],
+                "samples": samples,
+                "duration_s": samples / options["sampling_rate_hz"],
                 "elapsed_s": time.perf_counter() - started,
             },
         }

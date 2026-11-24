@@ -12,16 +12,21 @@ It needs no system Python or network connection to process a recording.
 
 ## Custom daily Python analysis
 
-Choose **Custom Python** in the analysis workspace to edit the bundled
-[standard impaired pipeline](src/impaired_pipeline.py). Set the recording metadata and select **Run**.
+Select **Mobilise-D**, **Mobilise-BAM**, or **Weartime** and turn on **Use Python script**
+to edit that mode's bundled template. **Custom Python** opens the
+[standard impaired pipeline](src/impaired_pipeline.py). Each mode keeps its own draft
+while the workspace is open. Turn the switch off to run the built-in pipeline.
+Set the recording metadata and select **Run**.
 **Open .py** loads a trusted UTF-8 script into the editor. **Save script as** writes the current text
 to a file for reuse. Edits live in the workspace until saved. **Restore template** restores the example.
 
 The worker loads the script once per run and calls
 `analyze_day(data, *, height_m, sensor_height_m, condition, sampling_rate_hz, cohort)`
 for each eligible day. The template documents units, axis conventions, day-relative indices and return
-values. It uses the standard impaired pipeline on aligned sensor-frame input. For a BAM mounting,
-explicitly apply the study's axis rotation in your script. Use the Python packages bundled with the app.
+values. Mobilise-BAM's template includes the study's axis rotation and threshold masks.
+Weartime receives `None` for participant metadata and reads the first sample's naive
+device-clock datetime from `data.attrs["first_sample_device_time"]`. Its template uses
+that time to calculate waking-hours wear for partial days. Use the Python packages bundled with the app.
 Custom scripts have access to the selected recording in Pyodide. Run only code whose author you trust.
 
 Return a dictionary of named pandas DataFrames, for example

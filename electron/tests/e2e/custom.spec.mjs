@@ -52,5 +52,25 @@ test('edit, run and save a trusted daily Python analysis', async ({}, info) => {
     await page.locator('#script-source').fill(source);
     await page.locator('#run').click();
     await expect(page.locator('#status')).toHaveText('Processing complete.');
+
+    for (const [mode, template, table] of [
+      ['mobilised', /GaitDatasetFromData/, 'strides'],
+      ['bam', /Recording4/, 'walking_bout_mask'],
+      ['weartime', /WtdMegaritisSignal/, 'weartime_summary'],
+    ]) {
+      await page.locator('#pipeline_type').selectOption(mode);
+      await page.locator('#script-toggle').check();
+      await expect(page.locator('#script-source')).toHaveValue(template);
+      await page.locator('#run').click();
+      await expect(page.locator('#status')).toHaveText('Processing complete.');
+      await expect(page.locator(`#tab-${table}`)).toBeVisible();
+    }
+    await page.locator('#script-source').fill(source);
+    await page.locator('#run').click();
+    await expect(page.locator('#tab-summary')).toHaveText('summary (1)');
+    await page.locator('#pipeline_type').selectOption('bam');
+    await expect(page.locator('#script-source')).toHaveValue(/Recording4/);
+    await page.locator('#pipeline_type').selectOption('weartime');
+    await expect(page.locator('#script-source')).toHaveValue(source);
   } finally { await app.close(); }
 });
