@@ -51,6 +51,11 @@ self.onmessage = async ({ data }) => {
     if (!['csv', 'cwa'].includes(data.format ?? 'csv')) throw new Error('Unsupported recording format.');
     setPython('run_options', data.options);
     py.runPython('validate_options(run_options)');
+    py.runPython('daily_function = None');
+    if (data.options.pipeline_type === 'custom') {
+      setPython('script_text', data.script);
+      py.runPython('daily_function = load_daily_script(script_text)\nrun_options["script_sha256"] = hashlib.sha256(script_text.encode()).hexdigest()');
+    }
     let days;
     let digest;
     let cwa;
@@ -110,10 +115,10 @@ self.onmessage = async ({ data }) => {
             setPython('cwa_channels', decoded.channels);
             setPython('cwa_timestamps', decoded.timestamps);
             setPython('cwa_header', decoded.header);
-            json = await py.runPythonAsync('json.dumps(process_cwa(None, cwa_channels, cwa_timestamps, cwa_header, run_options, progress=report_progress, input_sha256=input_digest), allow_nan=False)');
+            json = await py.runPythonAsync('json.dumps(process_cwa(None, cwa_channels, cwa_timestamps, cwa_header, run_options, progress=report_progress, input_sha256=input_digest, analyze_day=daily_function), allow_nan=False)');
           }
         } else {
-          json = await py.runPythonAsync('json.dumps(process_csv_day(csv_data, day_window, run_options, input_digest, report_progress), allow_nan=False)');
+          json = await py.runPythonAsync('json.dumps(process_csv_day(csv_data, day_window, run_options, input_digest, report_progress, analyze_day=daily_function), allow_nan=False)');
         }
         emit(JSON.parse(json));
       } catch (error) {
@@ -140,7 +145,7 @@ self.onmessage = async ({ data }) => {
   } finally {
     for (const proxy of proxies) proxy?.destroy?.();
     if (py) {
-      for (const name of ['recording_input', 'run_options', 'recording_metadata', 'csv_data', 'input_digest', 'report_progress', 'cwa_channels', 'cwa_timestamps', 'cwa_header', 'day_window', 'day_samples']) {
+      for (const name of ['script_text', 'daily_function', 'recording_input', 'run_options', 'recording_metadata', 'csv_data', 'input_digest', 'report_progress', 'cwa_channels', 'cwa_timestamps', 'cwa_header', 'day_window', 'day_samples']) {
         if (py.globals.has(name)) py.globals.delete(name);
       }
       py.runPython('import gc\ngc.collect()');

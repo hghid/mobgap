@@ -15,6 +15,7 @@ import hashlib
 import io
 import json
 import math
+import re
 import time
 import warnings
 from datetime import datetime, timedelta
@@ -100,7 +101,9 @@ def short_day_result(samples: int, options: dict[str, Any], digest: str, input_f
         "tables": {
             name: {"columns": [], "rows": []}
             for name in (
-                WEARTIME_TABLES
+                ["summary"]
+                if options.get("pipeline_type") == "custom"
+                else WEARTIME_TABLES
                 if options.get("pipeline_type") == "weartime"
                 else [*GAIT_TABLES, "walking_bout_mask"]
                 if options.get("pipeline_type") == "bam"
@@ -127,6 +130,8 @@ def process_csv_day(
     options: dict[str, Any],
     digest: str,
     progress: Callable[[str, str], None] | None = None,
+    *,
+    analyze_day=None,
 ) -> dict[str, Any]:
     """Run a fresh pipeline on one calendar-day CSV slice with day-relative sample indices."""
     daily = data.iloc[day["sample_start"] : day["sample_end"]].reset_index(drop=True).rename_axis("samples")
@@ -139,6 +144,7 @@ def process_csv_day(
         progress or (lambda _stage, _message: None),
         time.perf_counter(),
         input_format="csv",
+        analyze_day=analyze_day,
         input_sha256=digest,
         start_time=datetime.fromisoformat(options["recording_start_time"])
         + timedelta(seconds=day["sample_start"] / options["sampling_rate_hz"]),
@@ -167,8 +173,8 @@ def validate_runtime() -> None:
 def validate_options(options: dict[str, Any]) -> None:
     """Reject incomplete metadata instead of guessing physiological inputs."""
     pipeline_type = options.get("pipeline_type", "mobilised")
-    if pipeline_type not in {"mobilised", "weartime", "bam"}:
-        raise ValueError("Select Mobilise-D, Mobilise-BAM or Weartime.")
+    if pipeline_type not in {"mobilised", "weartime", "bam", "custom"}:
+        raise ValueError("Select Mobilise-D, Mobilise-BAM, Weartime or Custom Python.")
     numeric = [("sampling_rate_hz", 1000)]
     if pipeline_type != "weartime":
         numeric.extend([("height_m", 3), ("sensor_height_m", 3)])
@@ -228,6 +234,48 @@ def table(frame: pd.DataFrame | None) -> dict[str, Any]:
     return json.loads(frame.reset_index().to_json(orient="split", index=False, double_precision=15))
 
 
+def load_daily_script(source):
+    """Load a user-selected script in the processing worker for this run."""
+    if not isinstance(source, str) or not source.strip() or len(source.encode()) > 256 * 1024:
+        raise ValueError("Provide a nonempty Python script of at most 256 KiB.")
+    namespace = {"__name__": "daily_analysis"}
+    exec(compile(source, "daily_analysis.py", "exec"), namespace)
+    function = namespace.get("analyze_day")
+    if not callable(function):
+        raise ValueError(
+            "The script must define analyze_day(data, *, height_m, sensor_height_m, condition, sampling_rate_hz, cohort)."
+        )
+    return function
+
+
+def custom_tables(function, data, options):
+    """Invoke the daily analysis contract and validate its exportable tables."""
+    frames = function(
+        data,
+        height_m=options["height_m"],
+        sensor_height_m=options["sensor_height_m"],
+        condition=options["measurement_condition"],
+        sampling_rate_hz=options["sampling_rate_hz"],
+        cohort=options["cohort"],
+    )
+    if not isinstance(frames, dict) or not frames:
+        raise ValueError("analyze_day must return a nonempty dictionary of named DataFrames.")
+    tables = {}
+    for name, frame in frames.items():
+        if (
+            not isinstance(name, str)
+            or not re.fullmatch(r"[a-z][a-z_]{0,39}", name)
+            or name in {"constructor", "timeseries"}
+            or not isinstance(frame, pd.DataFrame)
+        ):
+            raise ValueError(f"Invalid result {name!r}: use a lowercase table name and a pandas DataFrame.")
+        value = table(frame)
+        if "day" in value["columns"] or not all(isinstance(col, str) for col in value["columns"]):
+            raise ValueError(f"Table {name!r} needs string column names; 'day' is reserved.")
+        tables[name] = {"columns": value["columns"], "rows": value["data"]}
+    return tables
+
+
 def load_cwa(channels: dict[str, Any], timestamps_us: Any, options: dict[str, Any]) -> pd.DataFrame:
     """Convert the Rust reader's g/deg-s float32 columns to the pipeline's float64 sensor frame.
 
@@ -265,6 +313,7 @@ def process_cwa(
     *,
     progress: Callable[[str, str], None] | None = None,
     input_sha256: str | None = None,
+    analyze_day=None,
 ) -> dict[str, Any]:
     """Run a decoded CWA with the same pipeline and export schema as CSV input."""
     report = progress or (lambda _stage, _message: None)
@@ -279,6 +328,7 @@ def process_cwa(
         report,
         started,
         input_format="cwa",
+        analyze_day=analyze_day,
         input_sha256=input_sha256,
         start_time=datetime(1970, 1, 1) + timedelta(microseconds=int(timestamps[0])),
         source={
@@ -329,7 +379,30 @@ def _process_data(
     source: dict[str, Any] | None = None,
     input_sha256: str | None = None,
     start_time: datetime | None = None,
+    analyze_day=None,
 ) -> dict[str, Any]:
+    if options.get("pipeline_type") == "custom":
+        report("process", "Running analyze_day…")
+        with warnings.catch_warnings(record=True) as captured:
+            warnings.simplefilter("always")
+            results = custom_tables(analyze_day, data, options)
+        return {
+            "schema_version": 1,
+            "tables": results,
+            "warnings": list(dict.fromkeys([*RUNTIME_NOTICES, *(str(item.message) for item in captured)])),
+            "provenance": {
+                "pipeline_type": "custom",
+                "pipeline": "Custom Python",
+                "script_api_version": 1,
+                "input_format": input_format,
+                "input_sha256": input_sha256,
+                "source": source,
+                "options": options,
+                "samples": len(data),
+                "duration_s": len(data) / options["sampling_rate_hz"],
+                "elapsed_s": time.perf_counter() - started,
+            },
+        }
     if options.get("pipeline_type") == "weartime":
         return _process_weartime(
             data, original_bytes, options, report, started, input_format, input_sha256, source, start_time

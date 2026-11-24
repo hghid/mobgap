@@ -47,7 +47,17 @@
             <label id="recording-start-field">CSV recording start (device clock)<input id="recording_start_time" name="recording_start_time" type="datetime-local" step="0.000001" required></label>
           </div>
         </fieldset>
-        <div class="run-line"><label class="pipeline-field">Pipeline type<select id="pipeline_type" name="pipeline_type"><option value="mobilised">Mobilise-D</option><option value="weartime">Weartime</option><option value="bam">Mobilise-BAM</option></select></label><button id="run" type="submit" disabled>Run</button><button id="cancel" type="button" class="secondary" hidden>Cancel</button><span id="pipeline-hint" class="hint">HA / COPD / CHF → healthy · MS / PD / PFF → impaired</span></div>
+        <div class="run-line"><label class="pipeline-field">Pipeline type<select id="pipeline_type" name="pipeline_type"><option value="mobilised">Mobilise-D</option><option value="weartime">Weartime</option><option value="bam">Mobilise-BAM</option><option value="custom">Custom Python</option></select></label><button id="run" type="submit" disabled>Run</button><button id="cancel" type="button" class="secondary" hidden>Cancel</button><span id="pipeline-hint" class="hint">HA / COPD / CHF → healthy · MS / PD / PFF → impaired</span></div>
+        <fieldset id="script-panel" hidden>
+          <legend>Daily analysis script</legend>
+          <label for="script-source" id="script-name">impaired_pipeline.py</label>
+          <textarea id="script-source" spellcheck="false" wrap="off" rows="18"></textarea>
+          <input type="file" id="script-file" accept=".py" hidden>
+          <button type="button" id="script-open" class="secondary">Open .py…</button>
+          <button type="button" id="script-save" class="secondary">Save script as…</button>
+          <button type="button" id="script-reset" class="text-button">Restore template</button>
+          <p class="hint">Run executes the editor contents on your recording. Use scripts you trust.</p>
+        </fieldset>
       </form>
     </section>
     <section class="card status-card" aria-labelledby="status-heading">

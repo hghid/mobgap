@@ -15,6 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   participant metadata is required for the gait analysis modes.
   Mobilise-BAM applies the driver's fixed X/Z sensor-axis rotation and free-living conditions, selects the
   default healthy/impaired pipeline by cohort, and exposes its walking-bout threshold masks.
+  Custom Python opens, edits, saves and runs trusted daily analysis scripts in the offline worker,
+  with a documented standard impaired-pipeline template and named DataFrame result tables.
   Start with Inkspot Science branding, platform information, MobGap attribution, and direct CWA file selection.
   Provide portable ZIP builds and configure a Windows Squirrel installer with shortcut and uninstall handling.
   CWA input has no application file-size cap. Process midnight-aligned calendar days separately, including shorter

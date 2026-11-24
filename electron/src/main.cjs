@@ -51,7 +51,7 @@ app.whenReady().then(async () => {
   }
   const allowed = new Set(['src/index.html', 'src/styles.css', 'src/renderer.mjs', 'src/worker.mjs', 'src/cwa-import.mjs',
     'src/timeseries.mjs', 'src/timeseries-plot.mjs', 'src/results.mjs', 'src/inkspot-logo.png',
-    'runtime/manifest.json', ...Object.keys(manifest.integrity).map((name) => `runtime/${name}`)]);
+    'src/impaired_pipeline.py', 'runtime/manifest.json', ...Object.keys(manifest.integrity).map((name) => `runtime/${name}`)]);
   protocol.handle('mobgap', async (request) => {
     const name = assetName(request.url, allowed);
     if (request.method !== 'GET' || !name) return new Response('Not found', { status: 404 });
@@ -105,6 +105,18 @@ app.whenReady().then(async () => {
     } finally { await file.close(); }
   }
   ipcMain.handle('csv:choose', (event) => chooseRecording(event, 'csv'));
+  ipcMain.handle('script:save', async (event, source) => {
+    requireSender(event);
+    if (typeof source !== 'string' || Buffer.byteLength(source) > 256 * 1024) throw new Error('Script exceeds 256 KiB.');
+    const chosen = await dialog.showSaveDialog(window, {
+      title: 'Save analysis script', defaultPath: 'daily_analysis.py',
+      filters: [{ name: 'Python script', extensions: ['py'] }],
+    });
+    if (chosen.canceled || !chosen.filePath) return false;
+    if (path.extname(chosen.filePath).toLowerCase() !== '.py') throw new Error('Choose a .py filename.');
+    await writeFile(chosen.filePath, source, 'utf8');
+    return true;
+  });
   ipcMain.handle('results:save', async (event, text) => {
     requireSender(event);
     const contents = validateExport(text);

@@ -10,6 +10,7 @@ from electron.python.adapter import (
     calendar_days,
     csv_days,
     load_csv,
+    load_daily_script,
     load_cwa,
     process_csv,
     process_csv_day,
@@ -44,6 +45,38 @@ def frame():
 
 def csv_bytes(frame):
     return frame.to_csv(index=False).encode()
+
+
+def test_custom_template_matches_standard_impaired(options):
+    raw = (EXAMPLES / "MS/001/TimeMeasure1_Test11_Trial1.csv").read_bytes()
+    options = {**options, "cohort": "MS", "recording_start_time": "2024-01-02T12:00"}
+    expected = process_csv(raw, options)
+    options["pipeline_type"] = "custom"
+    frame = load_csv(raw, options)
+    template = Path(__file__).parents[1] / "src/impaired_pipeline.py"
+    result = process_csv_day(
+        frame, csv_days(frame, options)[0], options, "a" * 64, analyze_day=load_daily_script(template.read_text())
+    )
+    assert result["tables"] == expected["tables"]
+
+
+def test_custom_script_requires_entry_point():
+    with pytest.raises(ValueError, match="analyze_day"):
+        load_daily_script("def process(): pass")
+
+
+def test_custom_cwa_contract(options):
+    channels = {name: np.ones(600, dtype=np.float32) for name in CHANNELS}
+    timestamps = np.arange(600, dtype=np.int64) * 10_000
+    options = {**options, "pipeline_type": "custom"}
+
+    def analyze_day(data, *, height_m, sensor_height_m, condition, cohort, sampling_rate_hz):
+        assert (height_m, sensor_height_m, condition, cohort, sampling_rate_hz) == (1.59, 0.964, "laboratory", "HA", 100)
+        return {"last_sample": data.tail(1)}
+
+    result = process_cwa(None, channels, timestamps, {}, options, analyze_day=analyze_day, input_sha256="a" * 64)
+    assert result["tables"]["last_sample"]["columns"] == ["samples", *CHANNELS]
+    np.testing.assert_allclose(result["tables"]["last_sample"]["rows"][0], [599, *([GRAV_MS2] * 3), 1, 1, 1])
 
 
 @pytest.mark.parametrize(

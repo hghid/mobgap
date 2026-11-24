@@ -22,6 +22,9 @@ let activeTable;
 let page = 0;
 let started;
 let watchdog;
+let scriptDirty = false;
+let template;
+let scriptWorkerUsed = false;
 const PAGE_SIZE = 100;
 
 function status(message, working = false) {
@@ -36,11 +39,15 @@ function controls() {
   $('pipeline_type').disabled = busy;
   const weartime = $('pipeline_type').value === 'weartime';
   const bam = $('pipeline_type').value === 'bam';
+  const custom = $('pipeline_type').value === 'custom';
+  $('script-panel').hidden = !custom;
+  $('script-panel').disabled = busy;
   for (const field of participantFields) $(field).disabled = busy || weartime;
   $('measurement_condition').disabled = busy || weartime || bam;
   if (bam) $('measurement_condition').value = 'free_living';
   $('sampling_rate_hz').min = weartime ? '50' : '0.01';
   $('pipeline-hint').textContent = weartime ? 'Signal-based wear detection · ≥50 Hz · no participant details required' :
+    custom ? 'One analyze_day call per eligible day' :
     bam ? 'BAM · X/Z axis rotation · free living · cohort defaults to PD' :
     'HA / COPD / CHF → healthy · MS / PD / PFF → impaired';
   $('metadata-hint').textContent = weartime ?
@@ -52,7 +59,7 @@ function controls() {
       'Enter recording units, sample rate and participant measurements. The app does not infer these from signal values.';
   $('choose').disabled = busy;
   $('choose-cwa').disabled = busy;
-  $('run').disabled = !ready || busy || !selected;
+  $('run').disabled = !ready || busy || !selected || (custom && !$('script-source').value.trim());
   $('settings-fields').disabled = busy;
   $('acceleration_unit').disabled = selected?.format === 'cwa';
   $('recording_start_time').disabled = selected?.format === 'cwa';
@@ -81,10 +88,11 @@ function fail(message) {
   controls();
 }
 
-function initialize() {
+function initialize(onReady) {
   worker?.terminate();
+  scriptWorkerUsed = false;
   ready = false;
-  busy = false;
+  busy = typeof onReady === 'function';
   requestId = null;
   stopTimer();
   $('error').hidden = true;
@@ -100,10 +108,12 @@ function initialize() {
     if (data.version !== 1 || (data.id !== null && data.id !== requestId)) return;
     if (data.type === 'ready') {
       ready = true;
+      busy = false;
       stopTimer();
       status('Ready to process a recording.');
       $('stage-note').textContent = 'Choose a CSV or CWA and check its metadata, then run the pipeline.';
       controls();
+      if (typeof onReady === 'function') onReady();
     } else if (data.type === 'progress') {
       status(data.message, true);
       $('stage-note').textContent = data.stage === 'process' ?
@@ -119,6 +129,7 @@ function initialize() {
         fail(`Processing ${dayLabel} exceeded the 10 minute per-day limit. Restart the runtime to try again.`);
       }, 600_000);
     } else if (data.type === 'error') {
+      if (scriptWorkerUsed) worker.terminate();
       if (data.id === null) ready = false;
       fail(data.message);
     } else if (data.type === 'result') {
@@ -133,6 +144,7 @@ function initialize() {
       $('day-select').value = option.value;
       renderResults();
     } else if (data.type === 'complete') {
+      if (scriptWorkerUsed) worker.terminate();
       busy = false;
       stopTimer();
       combinedResult = combineDayResults(dayResults);
@@ -155,7 +167,8 @@ function describeSelection() {
 function renderResults() {
   $('results').hidden = false;
   const combined = result.provenance.view === 'combined';
-  const count = result.provenance.pipeline_type === 'weartime' ? `${result.tables.weartime.rows.length} wear intervals` :
+  const count = result.provenance.pipeline_type === 'custom' ? `${Object.keys(result.tables).length} result tables` :
+    result.provenance.pipeline_type === 'weartime' ? `${result.tables.weartime.rows.length} wear intervals` :
     `${result.tables.walking_bouts.rows.length} walking bouts · ${result.tables.strides.rows.length} strides`;
   $('result-summary').textContent = `${combined ? `${result.provenance.day_runs.length} days combined · ` : ''}${count} · ${result.provenance.duration_s.toFixed(1)} s recording`;
   $('table-note').textContent = combined ? 'Rows are joined by day, with original day-relative indices. Daily statistics are not recalculated. Failed or skipped days remain listed in processing notices and JSON metadata.' :
@@ -182,7 +195,8 @@ function renderResults() {
     });
     $('tabs').append(button);
   }
-  if (!Object.hasOwn(views, activeTable)) activeTable = result.tables.weartime_summary ? 'weartime_summary' :
+  if (!Object.hasOwn(views, activeTable)) activeTable = result.provenance.pipeline_type === 'custom' ? Object.keys(result.tables)[0] :
+    result.tables.weartime_summary ? 'weartime_summary' :
     result.tables.aggregated.rows.length ? 'aggregated' : 'gait_sequences';
   page = 0;
   renderTable();
@@ -312,9 +326,47 @@ $('pipeline_type').addEventListener('change', () => {
 });
 $('plot-group').addEventListener('change', renderTable);
 
+const editor = $('script-source');
+function replaceScript(source, name) {
+  if (scriptDirty && !window.confirm('Discard unsaved script edits?')) return;
+  editor.value = source;
+  $('script-name').textContent = name;
+  scriptDirty = false;
+  controls();
+}
+editor.addEventListener('input', () => { scriptDirty = true; controls(); });
+editor.addEventListener('keydown', (event) => {
+  if (event.key === 'Tab' && !event.shiftKey && editor.selectionStart === editor.selectionEnd) {
+    event.preventDefault();
+    editor.setRangeText('    ', editor.selectionStart, editor.selectionEnd, 'end');
+    editor.dispatchEvent(new Event('input'));
+  }
+});
+$('script-open').onclick = () => $('script-file').click();
+$('script-file').onchange = async () => {
+  const file = $('script-file').files[0];
+  $('script-file').value = '';
+  if (!file) return;
+  try {
+    if (!/\.py$/i.test(file.name) || file.size > 256 * 1024) throw new Error('Choose a Python file of at most 256 KiB.');
+    replaceScript(await file.text(), file.name);
+  } catch (error) { fail(error.message); }
+};
+$('script-reset').onclick = () => replaceScript(template, 'impaired_pipeline.py');
+$('script-save').onclick = async () => {
+  try {
+    const source = editor.value;
+    if (await window.mobgap.saveScript(source)) {
+      if (editor.value === source) scriptDirty = false;
+      status('Python script saved.');
+    }
+  } catch (error) { fail(error.message); }
+};
 $('settings').addEventListener('submit', (event) => {
   event.preventDefault();
   if (!ready || busy || !selected || !$('settings').reportValidity()) return;
+  // Discard any modules or global settings changed by the previous custom script.
+  if (scriptWorkerUsed) { initialize(() => $('settings').requestSubmit()); return; }
   const options = Object.fromEntries(fields.map((name) => [name, $(name).type === 'number' ? Number($(name).value) : $(name).value]));
   if (options.pipeline_type !== 'weartime' && options.sensor_height_m > options.height_m) { fail('Sensor height cannot exceed participant height.'); return; }
   if (options.pipeline_type === 'weartime') for (const field of participantFields) delete options[field];
@@ -331,12 +383,14 @@ $('settings').addEventListener('submit', (event) => {
   started = performance.now();
   requestId = crypto.randomUUID();
   status('Sending recording to the processing worker…', true);
+  const script = options.pipeline_type === 'custom' ? editor.value : undefined;
+  scriptWorkerUsed = script !== undefined;
   // Retain the selected file for repeat runs; transfer just one fresh job buffer.
   if (selected.format === 'cwa') {
-    worker.postMessage({ version: 1, type: 'run', id: requestId, format: 'cwa', options, file: selected.file });
+    worker.postMessage({ version: 1, type: 'run', id: requestId, format: 'cwa', options, script, file: selected.file });
   } else {
     const bytes = selected.bytes.slice().buffer;
-    worker.postMessage({ version: 1, type: 'run', id: requestId, format: 'csv', options, bytes }, [bytes]);
+    worker.postMessage({ version: 1, type: 'run', id: requestId, format: 'csv', options, script, bytes }, [bytes]);
   }
   watchdog = setTimeout(() => {
     worker.terminate(); ready = false;
@@ -368,4 +422,13 @@ $('save-csv').addEventListener('click', async () => {
   finally { $('save-csv').disabled = activeTable === 'timeseries' || !result?.tables[activeTable]?.columns.length; }
 });
 setInterval(() => { if (started !== null && started !== undefined) $('elapsed').textContent = `${Math.floor((performance.now() - started) / 1000)} s elapsed`; }, 1000);
+try {
+  const response = await fetch('impaired_pipeline.py');
+  if (!response.ok) throw new Error('The impaired pipeline template is unavailable.');
+  template = await response.text();
+  replaceScript(template, 'impaired_pipeline.py');
+} catch (error) {
+  $('script-name').textContent = error.message;
+  $('script-reset').disabled = true;
+}
 initialize();

@@ -10,6 +10,26 @@ The installed application contains Python, WebAssembly, the MobGap wheel, models
 and the Rust/WebAssembly CWA reader.
 It needs no system Python or network connection to process a recording.
 
+## Custom daily Python analysis
+
+Choose **Custom Python** in the analysis workspace to edit the bundled
+[standard impaired pipeline](src/impaired_pipeline.py). Set the recording metadata and select **Run**.
+**Open .py** loads a trusted UTF-8 script into the editor. **Save script as** writes the current text
+to a file for reuse. Edits live in the workspace until saved. **Restore template** restores the example.
+
+The worker loads the script once per run and calls
+`analyze_day(data, *, height_m, sensor_height_m, condition, sampling_rate_hz, cohort)`
+for each eligible day. The template documents units, axis conventions, day-relative indices and return
+values. It uses the standard impaired pipeline on aligned sensor-frame input. For a BAM mounting,
+explicitly apply the study's axis rotation in your script. Use the Python packages bundled with the app.
+Custom scripts have access to the selected recording in Pyodide. Run only code whose author you trust.
+
+Return a dictionary of named pandas DataFrames, for example
+`{"summary": data[["acc_x", "acc_y", "acc_z"]].mean().to_frame("mean_ms2")}`.
+The viewer, combined-day view, CSV and JSON exports support these tables. Run metadata includes
+the SHA-256 of the editor text, runtime versions and analysis settings. Keep the saved script with your
+export to reproduce the analysis. Cancel terminates the worker.
+
 ## Build and run
 
 For development, install **Node.js 22.17 or newer**, npm, and [uv](https://docs.astral.sh/uv/getting-started/installation/).
