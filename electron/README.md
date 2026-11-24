@@ -4,7 +4,8 @@ A small Electron application running the repository's Python code in Pyodide, in
 It uses `MobilisedPipelineUniversal` with the default healthy and impaired pipelines from
 [`examples/pipeline/_03_preconfigured_mobilised_pipelines.py`](../examples/pipeline/_03_preconfigured_mobilised_pipelines.py).
 It also runs the default `WtdMegaritisSignal` weartime detector from `mobgap.weartime`.
-**Mobilise-BAM** reproduces the single-day configuration in Dr Cameron Kirk's supplied `driver_rev.py`.
+**Mobilise-BAM** applies the daily axis rotation, metadata and cohort pipeline selection from Dr Cameron Kirk's
+`driver_rev.py` using this repository's MobGap algorithms.
 The installed application contains Python, WebAssembly, the MobGap wheel, models, scientific dependencies,
 and the Rust/WebAssembly CWA reader.
 It needs no system Python or network connection to process a recording.
@@ -320,6 +321,13 @@ study-specific directory settings; those paths are not copied into the app or th
 The adapter never imports the reference driver. Tests compare all six tables, including threshold masks,
 across midnight for healthy and impaired configurations at 100 and 60 Hz. Microsecond timestamps and
 IDs/interval boundaries/masks match exactly; other numeric outputs use `rtol=1e-7`, `atol=1e-8`.
+
+Both sides of this check start from the same CWA decoding and use the repository's MobGap code.
+The study driver starts from an already standardized daily MATLAB recording and reads its sampling rate
+from that file. To reproduce a historical daily result, compare the six channels, sample times and day
+boundaries used to produce that recording, and identify the MobGap revision used by the historical run.
+The development wheel and April 2026 release both report version 1.2.0, although their default cadence
+and stride-length smoothing differ.
 
 To compare one day of an explicitly selected private recording, from `electron/`:
 

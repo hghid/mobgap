@@ -45,7 +45,7 @@ function controls() {
     'HA / COPD / CHF → healthy · MS / PD / PFF → impaired';
   $('metadata-hint').textContent = weartime ?
     'Weartime uses the default WtdMegaritisSignal detector on all six IMU channels at ≥50 Hz. Check sampling rate and units; participant details are not required.' :
-    bam ? 'Mobilise-BAM matches driver_rev.py: negate X and Z acceleration and gyroscope axes, use free_living, and select the default healthy/impaired pipeline by cohort (PD by default). Enter heights in metres and confirm this rotation matches the sensor mounting.' :
+    bam ? "Enter heights in metres. BAM uses the driver's 180° rotation about sensor Y. Confirm the sensor mounting matches. Historical MATLAB results also depend on how the recording was standardized." :
     selected?.example ? 'Metadata loaded from the matching repository example. You can review it before running.' :
     selected?.format === 'cwa' ?
       'CWA is decoded locally with cubic resampling (default 100 Hz), acceleration in g and gyroscope in °/s. Enter participant measurements and condition; mounting must match the Mobilise-D frame.' :
